@@ -1,0 +1,7 @@
+,WILL IT WORSEN (drought),WILL IT BE TOO WET
+base_rate,0.1337,0.0721
+warn_rate,0.1605,0.1653
+precision,0.3118,0.2379
+recall,0.3652,0.5724
+f1,0.3196,0.3182
+auc,0.7513,0.8387

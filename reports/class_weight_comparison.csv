@@ -1,0 +1,9 @@
+,ALERT (weighted),CAUTIOUS (unweighted),difference
+macro_f1,0.2778,0.2838,-0.006
+mae_stage,0.4302,0.395,0.0352
+skill_vs_persistence,-0.2055,-0.1702,-0.0353
+recall_d2plus,0.6035,0.5076,0.0959
+warn_rate,0.162,0.1556,0.0064
+precision_of_warnings,0.2313,0.2464,-0.0151
+missed_real_events,0.1704,0.2141,-0.0437
+accuracy,0.7056,0.7305,-0.0249
