@@ -1,0 +1,7 @@
+node_modules/
+.pnpm-store/
+activity.log
+.venv/
+__pycache__/
+data/
+outputs/

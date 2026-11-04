@@ -1,0 +1,9 @@
+# Live precipitation guidance
+
+Farmer View option 7 now shows a separate live NOAA precipitation forecast alongside observed PRISM rainfall. `scripts/fetch_noaa_precip.py` finds the latest published NBM CONUS cycle in NOAA NOMADS, requests the accepted `blend` dataset’s QPF field clipped to Connecticut, reads the GRIB grid, and samples the representative point of each mapped candidate field and the Yale Farm pilot. Original issue files are timestamped under `outputs/forecasts/precipitation/noaa-live/issued/`; `latest.json` points to the active issue. Raw clipped grids and their hashes are retained under `data/noaa-nbm/`.
+
+The current issue covers November 5–18, 2026. The first day has a complete local-day NBM quantitative precipitation total. For days 2–11, NOAA hourly precipitation probability is combined with each location's PRISM wet-day frequency and wet-day amount to form an experimental amount estimate. For days 12–14, that probability-guided estimate is blended equally with the trailing 42-day PRISM mean. These later amounts are experimental estimates, not direct NBM QPF. They have no calibrated uncertainty range and can miss storm timing; they should not be interpreted as precise farm rain-gauge readings. The incomplete last NBM local day is not treated as a complete total.
+
+The precipitation workflow runs from the daily prospective check. It retains the pre-existing history-only PRISM baseline in its original sealed ledger and saves NOAA guidance in the separate issue archive. A daily run will report NOAA download errors. Candidate boundaries are unconfirmed; NOAA values are point samples on the forecast grid and adjacent fields can share the same grid value.
+
+Primary source: [NOAA National Blend of Models](https://vlab.noaa.gov/web/mdl/nbm) and its [NOMADS filter catalog](https://nomads.ncep.noaa.gov/gribfilter.php?ds=blend).

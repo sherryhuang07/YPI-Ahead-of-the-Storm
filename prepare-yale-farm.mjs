@@ -1,0 +1,22 @@
+import fs from 'node:fs';
+import * as turf from '@turf/turf';
+const dir='data/yale-farm/';
+const read=name=>JSON.parse(fs.readFileSync(dir+name,'utf8').replace(/^\uFEFF/,''));
+const osm=read('osm-source.json');
+const way=osm.elements.find(e=>e.type==='way' && e.id===45092131);
+const nodes=new Map(osm.elements.filter(e=>e.type==='node').map(n=>[n.id,[n.lon,n.lat]]));
+const ring=way.nodes.map(id=>{if(!nodes.has(id))throw Error('Missing outline node');return nodes.get(id);});
+const farm=turf.polygon([ring],{farm_id:'yale-farm-new-haven',name:'Yale Farm',boundary_status:'provisional',boundary_type:'mapped_farm_extent',source:'OpenStreetMap way 45092131',source_version:way.version,source_edit_date:way.timestamp,farmer_confirmed:false,field_boundaries_confirmed:false});
+if(!turf.booleanValid(farm))throw Error('Invalid farm outline');
+const sqm=turf.area(farm);
+function overlaps(collection,idField){const out=[];for(const f of collection.features){if(!f.geometry || !turf.booleanIntersects(farm,f))continue;const clip=turf.intersect(turf.featureCollection([farm,f]));if(clip){const a=turf.area(clip);if(a>0.1)out.push({id:String(f.properties[idField]),overlap_square_meters:a,share_of_provisional_farm:a/sqm,properties:f.properties,geometry:clip.geometry});}}return out;}
+const parcels=read('parcels.geojson');
+if(parcels.exceededTransferLimit || !Array.isArray(parcels.features))throw Error('Incomplete parcel response');
+const parcelMatches=overlaps(parcels,'Parcel_ID');
+const watersheds=JSON.parse(fs.readFileSync('data/watersheds.geojson'));
+const watershedMatches=overlaps(watersheds,'SBAS_NO');
+const scenes=read('sentinel-scenes.json').features.sort((a,b)=>b.properties.datetime.localeCompare(a.properties.datetime));
+const profile={farm_id:farm.properties.farm_id,name:'Yale Farm',address:'345 Edwards Street, New Haven, Connecticut',address_source:'https://www.sustainablefood.yale.edu/the-yale-farm',public_description_acres_approx:1,provisional_outline_acres:sqm/4046.8564224,boundary_status:'Needs farm-team review',crop_area_acres:null,confirmed_boundary:null,management_zones:[],irrigation_source:null,crops:[],sensor_locations:[],recommendations_ready:false,parcel_matches:parcelMatches,watershed_matches:watershedMatches,satellite_candidates:scenes.map(s=>({id:s.id,date:s.properties.datetime,tile_cloud_percent:s.properties['eo:cloud_cover'],local_cloud_check:'Not yet assessed',visual_pixel_meters:10,source:s.assets.visual.href})),notes:['Publicly mapped farm extent is not a legal property boundary or a planted-area measurement.','Published one-acre description and measured public outline may differ. Do not rescale geometry to force agreement.','No operator or irrigation rights inferred from ownership.','Parcel collection year comes from live records; service description may lag updates.']};
+fs.writeFileSync(dir+'farm-outline.geojson',JSON.stringify(turf.featureCollection([farm]),null,2));
+fs.writeFileSync(dir+'profile.json',JSON.stringify(profile,null,2));
+console.log(JSON.stringify({outline_acres:profile.provisional_outline_acres,parcel_matches:parcelMatches.map(p=>({id:p.id,share:p.share_of_provisional_farm,address:p.properties.Location,year:p.properties.Parcel_Collection_Year})),watersheds:watershedMatches.map(w=>({id:w.id,name:w.properties.SUBREGION,share:w.share_of_provisional_farm}))},null,2));
