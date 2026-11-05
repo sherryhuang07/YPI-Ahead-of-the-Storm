@@ -11,11 +11,50 @@ foreach ($kind in @('precipitation','groundwater','streamflow')) {
     if ($latest.Count) {
         Write-Host "`n$kind - latest issue: $($latest[0].issued_at) UTC" -ForegroundColor Green
         $issueFiles = Get-ChildItem (Join-Path $PSScriptRoot "outputs/prospective/issued/$($latest[0].day)") -Filter '*.json'
+        $record = $null
         foreach ($issueFile in $issueFiles) {
-            $record = Get-Content $issueFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($record.issued_at -eq $latest[0].issued_at -and $record.variable -eq $kind) {
+            $candidate = Get-Content $issueFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($candidate.issued_at -eq $latest[0].issued_at -and $candidate.variable -eq $kind) {
+                $record = $candidate
                 Write-Host "Locations forecast: $(@($record.forecasts).Count). Withheld: $(@($record.unavailable).Count)."
                 foreach ($missing in $record.unavailable) { Write-Host "$($missing.id): $($missing.reason)" -ForegroundColor Yellow }
+                break
+            }
+        }
+        if ($kind -eq 'groundwater' -and $record -and $record.variable -eq 'groundwater') {
+            $wellForecasts = @($record.forecasts)
+            if ($wellForecasts.Count) {
+                Write-Host "`nTwo-week estimates for $($wellForecasts.Count) monitored wells: $($wellForecasts[0].dates[0]) through $($wellForecasts[0].dates[-1])" -ForegroundColor Cyan
+                Write-Host 'Numbers are feet below ground at each well. A larger number means the water level is lower.'
+                Write-Host 'Well                                               First day   Last day   Expected direction'
+                foreach ($well in $wellForecasts) {
+                    $first = [double]$well.prediction[0]
+                    $last = [double]$well.prediction[-1]
+                    $change = $last - $first
+                    if ($change -gt 0.05) { $direction = 'Lower water level' }
+                    elseif ($change -lt -0.05) { $direction = 'Higher water level' }
+                    else { $direction = 'About unchanged' }
+                    Write-Host ('{0,-50} {1,8:N2}   {2,8:N2}   {3}' -f $well.name,$first,$last,$direction)
+                }
+                Write-Host 'This is an experimental well-level forecast, not a measurement beneath any farm.' -ForegroundColor Yellow
+                Write-Host 'Prediction ranges are not calibrated yet; hundredths are display precision, not proven accuracy.'
+            }
+            $blindRoot = Join-Path $PSScriptRoot 'outputs/forecasts/groundwater/blind-hindcast'
+            $blindScorecards = @(Get-ChildItem -LiteralPath $blindRoot -Filter 'scorecard.json' -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName)
+            if ($blindScorecards.Count) {
+                $blindStudy = Get-Content $blindScorecards[-1].FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                Write-Host "`nBlind historical replay ($($blindStudy.training_period_for_method_selection[0]) to $($blindStudy.training_period_for_method_selection[1]) used to choose methods; test issues $($blindStudy.test_issue_period[0]) to $($blindStudy.test_issue_period[1])):" -ForegroundColor Cyan
+                Write-Host ('Average error: {0:N2} feet; simple last-reading comparison: {1:N2} feet; better at {2} of {3} wells.' -f $blindStudy.mean_station_forecast_mae_ft,$blindStudy.mean_station_persistence_mae_ft,$blindStudy.wells_beating_persistence,$blindStudy.wells_with_scores)
+                $dayOne = $blindStudy.by_forecast_day | Where-Object { $_.forecast_day -eq 1 } | Select-Object -First 1
+                $daySeven = $blindStudy.by_forecast_day | Where-Object { $_.forecast_day -eq 7 } | Select-Object -First 1
+                $dayFourteen = $blindStudy.by_forecast_day | Where-Object { $_.forecast_day -eq 14 } | Select-Object -First 1
+                if ($dayOne -and $daySeven -and $dayFourteen) {
+                    Write-Host ('Error by lead day (model / simple comparison): day 1 {0:N2}/{1:N2} ft; day 7 {2:N2}/{3:N2} ft; day 14 {4:N2}/{5:N2} ft.' -f $dayOne.forecast_mae_ft,$dayOne.persistence_mae_ft,$daySeven.forecast_mae_ft,$daySeven.persistence_mae_ft,$dayFourteen.forecast_mae_ft,$dayFourteen.persistence_mae_ft)
+                }
+                Write-Host 'Forecasts were saved before test readings were opened. Historical USGS values may include later revisions; this is not a real-time-vintage replay.' -ForegroundColor Yellow
+                Write-Host 'The current sealed forecast above is still waiting for its target readings.' -ForegroundColor Yellow
+            } elseif (Test-Path -LiteralPath $blindRoot) {
+                Write-Host "`nBlind replay forecasts are sealed; the separate scorecard is not available yet." -ForegroundColor Yellow
             }
         }
         $metrics = @($score.by_variable_and_lead | Where-Object { $_.variable -eq $kind })

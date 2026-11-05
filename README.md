@@ -19,7 +19,7 @@ Choose **1** for three separate experimental 14-day forecast baselines. They use
 
 Farm sensors, soil data, research papers, and local resources are not connected yet. This app does not recommend farm actions.
 
-Choose **8** for groundwater observations and monitoring gaps. The initial USGS snapshot includes 67 wells with readings in the past 90 days, contextual nearby-well links for mapped farm candidates, and a town coverage audit. Nearby readings are not farm measurements. See `GROUNDWATER.md` and `outputs/groundwater/groundwater-coverage.png`.
+Choose **8** for groundwater observations and monitoring gaps. The initial USGS snapshot includes 67 wells with readings in the past 90 days, contextual nearby-well links for mapped farm candidates, and a town coverage audit. Nearby readings are not farm measurements. The daily forecast check in **11** now displays the separate 14-day groundwater model for 8 monitored wells. See `GROUNDWATER.md` for its measured test error, limits, and improvements needed, and `outputs/groundwater/groundwater-coverage.png` for monitoring coverage.
 
 Choose **9** for USGS streamflow, complete-window averages, and official seasonal percentile bands. The initial snapshot has recent daily data for 69 Connecticut gauges and usable seasonal thresholds for 59. See `STREAMFLOW.md` and `outputs/streamflow/mill-river-streamflow.png`. Farm water access and upstream/downstream connections remain unverified.
 
