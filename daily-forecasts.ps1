@@ -17,9 +17,11 @@ $ErrorActionPreference = 'Continue'
 $root = $PSScriptRoot
 $python = Join-Path $root '.venv\Scripts\python.exe'
 $ctNow = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Eastern Standard Time')
+$logDir = Join-Path $root 'outputs\daily-run-logs'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+# First thing: record that this run started, so a run killed in its first seconds still leaves a trace.
+Add-Content -LiteralPath (Join-Path $logDir 'run-starts.log') -Value ('{0} | {1} part | scheduled={2} | pid {3}' -f (Get-Date).ToUniversalTime().ToString('o'), $Part, [bool]$Scheduled, $PID) -Encoding utf8
 if ($Scheduled) {
-    $logDir = Join-Path $root 'outputs\daily-run-logs'
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     Start-Transcript -LiteralPath (Join-Path $logDir ($ctNow.ToString('yyyy-MM-dd_HHmm') + '-' + $Part + '.log')) -Append | Out-Null
 }
 # Allowed Connecticut hours. After 10 PM any run could cross midnight partway through.
@@ -31,6 +33,20 @@ if (($ctNow.Hour -lt $earliest -or $ctNow.Hour -ge 22) -and -not $Force) {
     Add-Content -LiteralPath (Join-Path $root 'activity.log') -Value ((Get-Date).ToUniversalTime().ToString('o') + ' | Daily forecasts: ' + $msg) -Encoding utf8
     if ($Scheduled) { Stop-Transcript | Out-Null }
     exit 0
+}
+# Scheduled retries: a part that already finished without failures today exits at once.
+# (Forecasts are sealed once per Connecticut day anyway; this just avoids repeating downloads.)
+$summaryPath = Join-Path $root ('outputs\daily-run-summary-' + $Part + '.json')
+if ($Scheduled -and -not $Force -and (Test-Path -LiteralPath $summaryPath)) {
+    try {
+        $prev = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+        $prevCt = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId(([DateTime]::Parse($prev.completed_at)).ToUniversalTime(), 'Eastern Standard Time')
+        if ($prevCt.Date -eq $ctNow.Date -and -not @($prev.jobs | Where-Object { $_.exit_code -ne 0 }).Count) {
+            Write-Host ('The ' + $Part + ' part already completed today at ' + $prevCt.ToString('HH:mm') + '; nothing to do.')
+            Stop-Transcript | Out-Null
+            exit 0
+        }
+    } catch { Write-Host 'Could not read the previous run summary; running anyway.' }
 }
 $prospective = Join-Path $root 'scripts\prospective_daily.py'
 $learning = Join-Path $root 'scripts\learning_daily.py'

@@ -64,6 +64,8 @@ Each original model keeps its frozen weights, so its prospective score stays a f
 
 **Allowed hours:** night part 12:00 AM-10:00 PM; morning part 5:00 AM-10:00 PM. Each variable gets one sealed issue per Connecticut day: streamflow issued before USGS publishes yesterday's reading would be withheld for the whole day, and any run after 10 PM could cross midnight partway through. Outside those hours the runner logs a skip (`-Force` overrides). Night issues target days starting tomorrow, so precipitation, groundwater and root-zone forecasts sealed at 12:05 AM do not include the day they are issued on.
 
+**Missed and stopped runs (found November 6, 2026).** The laptop sleeps in Modern Standby with the lid closed, so a 6:30 AM run waits until it wakes (10:34 AM that day). That catch-up run was then stopped within seconds with exit code `0xC000013A` (console closed), before writing a log, and nothing retried it. Task Scheduler's own history log is turned off on this PC, so the exact trigger is unknown. Safeguards: every run first appends a line to `outputs/daily-run-logs/run-starts.log`; a scheduled part that already finished without failures today exits at once; and `Update Forecast Schedule.cmd` (double-click it once) adds same-day retries: night 12:05 AM and 5:00 AM, morning 6:30 AM, 9:00 AM and 1:00 PM. Retries never duplicate a forecast, because each variable is sealed once per Connecticut day.
+
 To pause or remove the schedule: disable or delete those tasks in Task Scheduler, or run `Unregister-ScheduledTask -TaskName 'Ahead of the Storm - Daily Forecasts (night)'` (and `(morning)`) in PowerShell.
 
 ## Operation and recovery
