@@ -41,13 +41,20 @@ The standalone root-zone model has its own sealed daily test, separate from the 
 
 ## Daily runner for every model
 
-`Run Daily Forecasts.cmd` (script `daily-forecasts.ps1`) runs all four ledgers independently: `prospective_daily.py`, `regional_daily.py`, then the root-zone daily step. One failing job does not stop the others; a summary goes to `outputs/daily-run-summary.json` and `activity.log`. Reservoir capacity has no daily public feed and therefore no daily forecast.
+`daily-forecasts.ps1` runs each ledger independently (one failing job never stops the others) in two parts, because the models need different data to be ready:
 
-**Scheduled on this PC:** Windows Task Scheduler task **"Ahead of the Storm - Daily Forecasts"** runs `daily-forecasts.ps1 -Scheduled` at **6:30 AM** every day (hidden window, current Windows user, only while signed in so the encrypted NASA sign-in can be unlocked). A run missed while the PC was off or asleep starts when it is next available. Each scheduled run's output is saved in `outputs/daily-run-logs/`.
+| Part | Scheduled (Connecticut time) | Ledgers | Why then |
+|---|---|---|---|
+| `-Part night` | **12:05 AM** | precipitation baseline (+ NOAA NBM archive), groundwater wells, root-zone soil moisture | none of these needs yesterday's readings; the day's forecast is sealed as soon as the day begins |
+| `-Part morning` | **6:30 AM** | Connecticut stream gauges, neighboring-state stream gauges | the frozen streamflow models need yesterday's USGS daily reading, which is not published around midnight |
 
-**Allowed hours: 5:00 AM to 10:00 PM Connecticut time.** Each variable gets one sealed issue per Connecticut day. Streamflow needs yesterday's clean USGS reading; a run just after midnight, before USGS publishes it, would seal an issue with streamflow withheld for the whole day, and a run after 10 PM could cross midnight partway through. Outside those hours the runner logs a skip (`-Force` overrides). If the earlier ChatGPT/Codex 6:00 AM automation is still active, the 6:30 run only refreshes observations and scores; same-day issues are never duplicated.
+`prospective_daily.py --only ...` issues just the listed variables (observations and scores are refreshed for all of them); `--skip-noaa` leaves out the NBM download in the morning part. `Run Daily Forecasts.cmd` runs both parts by hand (`-Part all`, morning hours only). Summaries go to `outputs/daily-run-summary-<part>.json` and `activity.log`; scheduled runs keep their full output in `outputs/daily-run-logs/`. Reservoir capacity has no daily public feed and therefore no daily forecast.
 
-To pause or remove the schedule: open Task Scheduler and disable or delete that task, or run `Unregister-ScheduledTask -TaskName 'Ahead of the Storm - Daily Forecasts'` in PowerShell.
+**Scheduled on this PC:** two Windows Task Scheduler tasks, **"Ahead of the Storm - Daily Forecasts (night)"** and **"... (morning)"**, run under the current Windows user, hidden, only while signed in (so the encrypted NASA sign-in can be unlocked). A run missed while the PC was off or asleep starts when it is next available.
+
+**Allowed hours:** night part 12:00 AM-10:00 PM; morning part 5:00 AM-10:00 PM. Each variable gets one sealed issue per Connecticut day: streamflow issued before USGS publishes yesterday's reading would be withheld for the whole day, and any run after 10 PM could cross midnight partway through. Outside those hours the runner logs a skip (`-Force` overrides). Night issues target days starting tomorrow, so precipitation, groundwater and root-zone forecasts sealed at 12:05 AM do not include the day they are issued on.
+
+To pause or remove the schedule: disable or delete those tasks in Task Scheduler, or run `Unregister-ScheduledTask -TaskName 'Ahead of the Storm - Daily Forecasts (night)'` (and `(morning)`) in PowerShell.
 
 ## Operation and recovery
 

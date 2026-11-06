@@ -1,35 +1,45 @@
-# Daily 14-day test forecasts for every isolated model, each in its own sealed ledger:
-#   1. prospective_daily.py  - precipitation baseline, groundwater wells, CT stream gauges (+ NOAA NBM archive)
-#   2. regional_daily.py     - connected neighboring-state stream gauges
-#   3. root-zone-update.ps1 -Step daily - root-zone soil moisture (NASA NLDAS-2 inputs)
-# Jobs run independently; one failure never blocks or alters the others. Re-running on the
-# same Connecticut day refreshes observations and scores but never replaces a sealed forecast.
-# Reservoir capacity has no daily public feed, so it has no daily forecast (see RESERVOIRS.md).
-param([switch]$Scheduled, [switch]$Force)
+# Daily 14-day test forecasts for every isolated model, each in its own sealed ledger.
+#
+#   -Part night   (scheduled 12:05 AM): precipitation baseline + NOAA NBM archive, groundwater
+#                 wells, root-zone soil moisture. None of these needs yesterday's readings.
+#   -Part morning (scheduled 6:30 AM):  Connecticut stream gauges and neighboring-state gauges.
+#                 The frozen streamflow models need yesterday's USGS daily reading, which is
+#                 not published around midnight.
+#   -Part all     (manual default):     everything, morning hours only.
+#
+# Jobs run independently; one failure never blocks or alters the others. Each variable gets one
+# sealed issue per Connecticut day; re-running refreshes observations and scores but never
+# replaces a sealed forecast. Reservoir capacity has no daily public feed (see RESERVOIRS.md).
+param([ValidateSet('all','night','morning')][string]$Part = 'all', [switch]$Scheduled, [switch]$Force)
 $ErrorActionPreference = 'Continue'
 $root = $PSScriptRoot
+$python = Join-Path $root '.venv\Scripts\python.exe'
 $ctNow = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Eastern Standard Time')
 if ($Scheduled) {
     $logDir = Join-Path $root 'outputs\daily-run-logs'
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    Start-Transcript -LiteralPath (Join-Path $logDir ($ctNow.ToString('yyyy-MM-dd_HHmm') + '.log')) -Append | Out-Null
+    Start-Transcript -LiteralPath (Join-Path $logDir ($ctNow.ToString('yyyy-MM-dd_HHmm') + '-' + $Part + '.log')) -Append | Out-Null
 }
-# Each variable gets one sealed issue per Connecticut day. Before about 5 AM, yesterday's USGS
-# readings are usually unpublished, so streamflow would be withheld for the whole day; after
-# 10 PM a run could cross midnight partway through. Only run inside 5:00 AM - 10:00 PM.
-if (($ctNow.Hour -lt 5 -or $ctNow.Hour -ge 22) -and -not $Force) {
-    $msg = 'Skipped: it is ' + $ctNow.ToString('HH:mm') + ' in Connecticut. Daily forecasts run between 5:00 AM and 10:00 PM (use -Force to override).'
+# Allowed Connecticut hours. After 10 PM any run could cross midnight partway through.
+# Streamflow (morning/all) must also wait until 5 AM for yesterday's USGS readings.
+$earliest = if ($Part -eq 'night') { 0 } else { 5 }
+if (($ctNow.Hour -lt $earliest -or $ctNow.Hour -ge 22) -and -not $Force) {
+    $msg = 'Skipped ' + $Part + ' run: it is ' + $ctNow.ToString('HH:mm') + ' in Connecticut. Allowed from ' + $earliest + ':00 to 22:00 (use -Force to override).'
     Write-Host $msg -ForegroundColor Yellow
     Add-Content -LiteralPath (Join-Path $root 'activity.log') -Value ((Get-Date).ToUniversalTime().ToString('o') + ' | Daily forecasts: ' + $msg) -Encoding utf8
     if ($Scheduled) { Stop-Transcript | Out-Null }
     exit 0
 }
-$python = Join-Path $root '.venv\Scripts\python.exe'
-$jobs = @(
-    @{ name = 'Precipitation, groundwater wells and CT streamflow'; run = { & $python (Join-Path $root 'scripts\prospective_daily.py') } },
-    @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
+$prospective = Join-Path $root 'scripts\prospective_daily.py'
+$nightJobs = @(
+    @{ name = 'Precipitation and groundwater wells (+ NOAA NBM)'; run = { & $python $prospective --only precipitation groundwater } },
     @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } }
 )
+$morningJobs = @(
+    @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
+    @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } }
+)
+$jobs = switch ($Part) { 'night' { $nightJobs } 'morning' { $morningJobs } default { $nightJobs + $morningJobs } }
 $results = @()
 Push-Location $root
 try {
@@ -44,11 +54,10 @@ try {
         $results += [pscustomobject]@{ job = $job.name; started_at = $started.ToString('o'); exit_code = $code; status = $status }
     }
 } finally { Pop-Location }
-$summary = [pscustomobject]@{ completed_at = (Get-Date).ToUniversalTime().ToString('o'); jobs = $results }
-$summaryPath = Join-Path $root 'outputs\daily-run-summary.json'
-$summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding utf8
+$summary = [pscustomobject]@{ completed_at = (Get-Date).ToUniversalTime().ToString('o'); part = $Part; jobs = $results }
+$summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root ('outputs\daily-run-summary-' + $Part + '.json')) -Encoding utf8
 $failed = @($results | Where-Object { $_.exit_code -ne 0 })
-$line = (Get-Date).ToUniversalTime().ToString('o') + ' | Daily forecasts: ' + ($results.Count - $failed.Count) + ' of ' + $results.Count + ' jobs ok' + $(if ($failed.Count) { '; failed: ' + (($failed | ForEach-Object { $_.job }) -join ', ') } else { '' })
+$line = (Get-Date).ToUniversalTime().ToString('o') + ' | Daily forecasts (' + $Part + '): ' + ($results.Count - $failed.Count) + ' of ' + $results.Count + ' jobs ok' + $(if ($failed.Count) { '; failed: ' + (($failed | ForEach-Object { $_.job }) -join ', ') } else { '' })
 Add-Content -LiteralPath (Join-Path $root 'activity.log') -Value $line -Encoding utf8
 Write-Host ''
 Write-Host $line

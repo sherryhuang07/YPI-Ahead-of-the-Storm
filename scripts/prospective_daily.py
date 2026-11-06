@@ -105,7 +105,13 @@ def collect(reg,offline=False):
         if p.stem<=str(end) and p.with_suffix('.json').exists():grids[p.stem]=p
     if not offline:
         try:
-            releases=request_json(f'https://services.nacse.org/prism/data/get/releaseDate/us/800m/ppt/{end-timedelta(days=89):%Y%m%d}/{end:%Y%m%d}',dict(json='true'),timeout=60)
+            # PRISM rejects the whole request if its end date is not released yet (e.g. a
+            # 12:05 AM run asking for yesterday), so step the end date back up to two days.
+            for back in range(3):
+                try:
+                    releases=request_json(f'https://services.nacse.org/prism/data/get/releaseDate/us/800m/ppt/{end-timedelta(days=89):%Y%m%d}/{end-timedelta(days=back):%Y%m%d}',dict(json='true'),timeout=60);break
+                except Exception:
+                    if back==2:raise
             exclusive(folder/'prism-releases.json',releases)
             # Catch up missing published dates; never silently substitute a missing grid with zero rain.
             for day in sorted({x[0] for x in releases if x[0]<=str(end)}):
@@ -236,17 +242,26 @@ def score(c):
     return new
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--offline',action='store_true');a=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--offline',action='store_true')
+    # --only lets the schedule issue variables at different times of day. Streamflow needs
+    # yesterday's USGS reading, so it is issued in the morning; a variable not listed here is
+    # not sealed by this run (observations and scores are still refreshed for all variables).
+    parser.add_argument('--only',nargs='+',choices=['streamflow','groundwater','precipitation'],default=['streamflow','groundwater','precipitation'])
+    parser.add_argument('--skip-noaa',action='store_true',help='Do not fetch the NOAA NBM farm forecast in this run.')
+    a=parser.parse_args()
     O.mkdir(parents=True,exist_ok=True);c=db();verify(c);reg=model_registry()
     snapshot,snap=collect(reg,a.offline);rain=grid_values(snap)
     for kind in ['streamflow','groundwater']:
+        if kind not in a.only:continue
         rows,missing=make_water(kind,reg,snap);seal(c,kind,rows,missing,snapshot,snap,D/'model-v1.json')
-    rows,missing=make_rain(rain);seal(c,'precipitation',rows,missing,snapshot,snap,D/'model-v1.json')
+    if 'precipitation' in a.only:
+        rows,missing=make_rain(rain);seal(c,'precipitation',rows,missing,snapshot,snap,D/'model-v1.json')
     record_observations(c,snap,snapshot,rain);new=score(c)
     # NOAA NBM guidance is issued into its own timestamped farm-level archive;
     # it never replaces the already sealed historical-baseline forecast above.
-    try:subprocess.run([sys.executable,str(ROOT/'scripts/fetch_noaa_precip.py')],check=True,cwd=ROOT)
-    except Exception as e:snap['errors'].append('NOAA NBM precipitation: '+str(e))
+    if not a.skip_noaa:
+        try:subprocess.run([sys.executable,str(ROOT/'scripts/fetch_noaa_precip.py')],check=True,cwd=ROOT)
+        except Exception as e:snap['errors'].append('NOAA NBM precipitation: '+str(e))
     save(O/'last-run.json',dict(completed_at=utc().isoformat(),snapshot=str(snapshot.relative_to(ROOT)),source_errors=snap['errors'],new_comparisons=new,offline=a.offline))
     log(f'Daily prospective check complete: {new} new comparisons; {len(snap["errors"])} source errors. No earlier forecast changed.')
     if snap['errors']:raise SystemExit('Partial data update: see outputs/prospective/last-run.json')

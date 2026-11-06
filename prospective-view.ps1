@@ -3,7 +3,7 @@ if (-not (Test-Path $path)) { Write-Host 'The first daily check has not finished
 $score = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
 $run = Get-Content (Join-Path $PSScriptRoot 'outputs/prospective/last-run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host 'DAILY FORECAST CHECK - NO LOOKING AHEAD' -ForegroundColor Cyan
-Write-Host 'Daily schedule: 6:30 AM Connecticut time (Windows task "Ahead of the Storm - Daily Forecasts"). Computer must be on and signed in.'
+Write-Host 'Daily schedule (Connecticut time): 12:05 AM rainfall, wells and soil moisture; 6:30 AM stream gauges. Computer must be on and signed in.'
 Write-Host "Last completed check (UTC): $($run.completed_at)"
 Write-Host 'Original predictions are timestamped and kept. Later readings only score them.'
 Write-Host ('New comparisons scored in this check: {0}.' -f $run.new_comparisons)
