@@ -2,6 +2,12 @@
 
 First step: two plain-English terminal windows for a Connecticut farm water-stress app.
 
+## Farmer app (browser)
+
+Double-click **Open Farm App.cmd**. It rebuilds the pages from the newest sealed forecasts and opens them in your default browser; no internet connection or server is needed to view them. The home page shows the 14-day drought outlook for Connecticut, each of its 9 planning regions, or Yale Farm: drought right now, the chance it gets worse by each of the next two U.S. Drought Monitor maps, and a day-by-day strip of rain and fire danger. Buttons open plain-language pages for each model (drought, rain, soil moisture, streams, groundwater, fire danger, coastal water, reservoirs) and a page showing how forecasts compare with what happened. The pages are rebuilt automatically after each nightly run (`scripts/build_app.py`, output in `app/`, not committed).
+
+## Terminal views
+
 Double-click **Start Here.cmd** to open both windows.
 
 - **Farmer View** shows the starting interface. Type 1, 2, or 3 and press Enter to explore it. Type Q to close it.

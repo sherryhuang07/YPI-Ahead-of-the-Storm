@@ -66,6 +66,8 @@ $morningJobs = @(
     @{ name = 'DEEP fire danger rating capture'; run = { & $python (Join-Path $root 'scripts\fetch_fire_danger_reports.py') } }
 )
 $jobs = switch ($Part) { 'night' { $nightJobs } 'morning' { $morningJobs } default { $nightJobs + $morningJobs } }
+# Every part ends by rebuilding the farmer web pages (app/) from the newest sealed forecasts.
+$jobs += @{ name = 'Farmer app pages'; run = { & $python (Join-Path $root 'scripts\build_app.py') } }
 $results = @()
 Push-Location $root
 try {
