@@ -17,12 +17,16 @@ Choose **7** for cumulative precipitation from PRISM's nominal 800-meter daily g
 
 Choose **1** for three separate experimental 14-day forecast baselines. They use only their own precipitation, groundwater, or streamflow history. They are not operationally validated: the rainfall baseline failed its held-out comparison, farm groundwater is unavailable, and streamflow is limited to supported gauges. See `FORECASTS.md` for actual coverage and test results.
 
-Farm sensors, soil data, research papers, and local resources are not connected yet. This app does not recommend farm actions.
+Farm sensors, research papers, and local resources are not connected yet. Root-zone soil moisture (historical test plus a live 1-14 day research forecast) is available separately under option 14. This app does not recommend farm actions.
 
 Choose **8** for groundwater observations and monitoring gaps. The initial USGS snapshot includes 67 wells with readings in the past 90 days, contextual nearby-well links for mapped farm candidates, and a town coverage audit. Nearby readings are not farm measurements. The daily forecast check in **11** now displays the separate 14-day groundwater model for 8 monitored wells. See `GROUNDWATER.md` for its measured test error, limits, and improvements needed, and `outputs/groundwater/groundwater-coverage.png` for monitoring coverage.
 
 Choose **9** for USGS streamflow, complete-window averages, and official seasonal percentile bands. The initial snapshot has recent daily data for 69 Connecticut gauges and usable seasonal thresholds for 59. See `STREAMFLOW.md` and `outputs/streamflow/mill-river-streamflow.png`. Farm water access and upstream/downstream connections remain unverified.
 
+Choose **13** for Connecticut DPH drinking-water surface-capacity data and the public-history baseline check. The current local import is the November 12, 2024 snapshot for 34 public water systems. We have assembled 11 dated snapshots in total spanning 2022–2024, but the observations are too sparse and uneven for a reliable current two-week model. See `RESERVOIRS.md` and `RESERVOIR-PUBLIC-HISTORY.md`.
+
 Activity is saved on this computer in `activity.log`. Earlier entries may appear when you reopen the windows. Data import scripts request public datasets online; browsing the saved results works locally.
+
+Choose **14** for the standalone root-zone soil moisture experiment: one-through-fourteen-day historical predictions using USGS/NLDAS watershed histories, with held-out testing, plus a live research forecast from recent NASA NLDAS-2 inputs (run `root-zone-update.ps1` to refresh). It does not feed an overall drought model. Farm sensor validation remains pending. CPC legacy tables have been deleted. See `ROOT-ZONE-SOIL-MOISTURE.md`.
 
 The geographic foundation is documented in `WATERSHEDS.md`. The original boundary download is in `data/watersheds.geojson`. Run `node build-watersheds.cjs` to rebuild the catalog and map from that saved download.

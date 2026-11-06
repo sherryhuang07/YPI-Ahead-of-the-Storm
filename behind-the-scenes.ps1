@@ -40,7 +40,29 @@ if (Test-Path -LiteralPath $groundPath) {
     Write-Host ('Coverage gap: {0} towns have no recent reading in these sources' -f $ground.towns_without_recent_well)
     Write-Host 'Nearby wells are context, not farm measurements. No automatic refresh is running.'
 }
+$reservoirPath = Join-Path $PSScriptRoot 'data/reservoirs/2024-11-12.json'
+if (Test-Path -LiteralPath $reservoirPath) {
+    $reservoirs = Get-Content -LiteralPath $reservoirPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Write-Host ('Ready: CT DPH surface capacity - {0} systems in the {1} snapshot' -f $reservoirs.report_summary.systems,$reservoirs.report_date)
+    Write-Host 'Data is by water system, not individual reservoir. Reading dates are irregular.'
+    $reservoirHistoryPath = Join-Path $PSScriptRoot 'data/reservoirs/historical/history-audit.json'
+    if (Test-Path -LiteralPath $reservoirHistoryPath) {
+        $reservoirHistory = Get-Content -LiteralPath $reservoirHistoryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Write-Host ('Ready: public DPH history - {0} dated reports, {1} system readings, {2} matching system IDs' -f $reservoirHistory.reports,$reservoirHistory.rows,$reservoirHistory.systems_seen)
+        Write-Host ('Exploratory baseline check: {0} near-two-week cases; persistence MAE {1:N1} points; trend MAE {2:N1} points.' -f $reservoirHistory.evaluation_targets,$reservoirHistory.mean_absolute_error_percent_points,$reservoirHistory.trend_mean_absolute_error_percent_points)
+        Write-Host 'Not ready: A reliable trained model; history is sparse, clustered, and unevenly spaced.'
+    } else {
+        Write-Host 'Waiting: More dated snapshots or a historical series before building a two-week model.'
+    }
+}
 Write-Host 'Waiting: Climate research and local resource information'
+$soilPath = Join-Path $PSScriptRoot 'outputs/root-zone/latest.json'
+if (Test-Path -LiteralPath $soilPath) {
+    $soil = Get-Content -LiteralPath $soilPath -Raw | ConvertFrom-Json
+    Write-Host ('Root-zone soil moisture: {0}' -f $soil.status)
+    Write-Host ('Historical inputs: {0} watersheds with Connecticut outlets; no overall drought model connection.' -f $soil.watersheds)
+    Write-Host 'CPC tables deleted. Current NLDAS feed, SMAP comparison and farm sensor validation still needed.'
+}
 $flowPath = Join-Path $PSScriptRoot 'outputs/streamflow/summary.json'
 if (Test-Path -LiteralPath $flowPath) {
     $flow = Get-Content -LiteralPath $flowPath -Raw | ConvertFrom-Json

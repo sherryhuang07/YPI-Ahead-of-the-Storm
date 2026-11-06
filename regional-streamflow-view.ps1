@@ -4,6 +4,17 @@ $bodies = Get-Content (Join-Path $root 'water-feature-context.json') -Raw -Encod
 $gauges = Get-Content (Join-Path $root 'relevant-gauges.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $lookup = @{}; foreach ($g in $gauges) { $lookup[$g.gauge_id] = $g }
 $predictions = @{}; $latestPath = Join-Path $PSScriptRoot 'outputs/regional-prospective/scoreboard.json'
+$regionalRunPath = Join-Path $PSScriptRoot 'outputs/regional-prospective/last-run.json'
+if (Test-Path -LiteralPath $regionalRunPath) {
+    $regionalRun = Get-Content $regionalRunPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Write-Host "Latest daily data check (UTC): $($regionalRun.completed_at)"
+    if ($regionalRun.source_errors.Count) {
+        Write-Host ('USGS daily download failed. No live neighboring-gauge observations were captured; {0} possible gauge forecasts are unavailable and no new comparisons were scored.' -f $regionalRun.unavailable_forecasts) -ForegroundColor Yellow
+        Write-Host 'Earlier sealed forecasts remain in the archive; no missing flow values are substituted.' -ForegroundColor Yellow
+    } else {
+        Write-Host ('Latest check: {0} neighboring gauges forecast; {1} comparisons newly scored.' -f $regionalRun.available_forecasts,$regionalRun.new_comparisons)
+    }
+}
 if (Test-Path $latestPath) {
     $score = Get-Content $latestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $latest = $score.issues | Sort-Object issued_at | Select-Object -Last 1

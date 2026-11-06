@@ -6,6 +6,12 @@ Write-Host 'DAILY FORECAST CHECK - NO LOOKING AHEAD' -ForegroundColor Cyan
 Write-Host 'Daily schedule: 6:00 AM Connecticut time. Computer and app must be running.'
 Write-Host "Last completed check (UTC): $($run.completed_at)"
 Write-Host 'Original predictions are timestamped and kept. Later readings only score them.'
+Write-Host ('New comparisons scored in this check: {0}.' -f $run.new_comparisons)
+if ($run.source_errors.Count) {
+    Write-Host 'Some live data downloads failed. Missing readings stay unscored; no values are filled in.' -ForegroundColor Yellow
+} else {
+    Write-Host 'Live inputs were retrieved for this check.'
+}
 foreach ($kind in @('precipitation','groundwater','streamflow')) {
     $latest = @($score.issues | Where-Object { $_.variable -eq $kind } | Sort-Object issued_at | Select-Object -Last 1)
     if ($latest.Count) {
@@ -68,4 +74,12 @@ foreach ($kind in @('precipitation','groundwater','streamflow')) {
 Write-Host "`nUnits: rainfall mm; groundwater feet below land; streamflow cubic feet/second."
 Write-Host 'Groundwater is at monitored wells. Farm groundwater and ungauged streams remain unavailable.'
 Write-Host 'Neighboring-state stream gauges have a separate forecast archive. See Farmer View option 12.'
-if ($run.source_errors.Count) { Write-Host 'Some data could not be updated:' -ForegroundColor Yellow; $run.source_errors | ForEach-Object { Write-Host $_ } }
+if ($run.source_errors.Count) {
+    Write-Host 'Data sources that could not be reached:' -ForegroundColor Yellow
+    foreach ($errorText in $run.source_errors) {
+        if ($errorText -match 'api\.waterdata\.usgs\.gov') { Write-Host 'USGS daily water observations: download failed.' -ForegroundColor Yellow }
+        elseif ($errorText -match 'services\.nacse\.org') { Write-Host 'PRISM precipitation history: download failed.' -ForegroundColor Yellow }
+        elseif ($errorText -match 'NOAA NBM|nomads\.ncep\.noaa\.gov') { Write-Host 'NOAA live precipitation guidance: download failed.' -ForegroundColor Yellow }
+        else { Write-Host 'A data source download failed.' -ForegroundColor Yellow }
+    }
+}

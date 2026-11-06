@@ -1,1 +1,1 @@
-{"path": "outputs\\forecasts\\precipitation\\noaa-live\\issued\\2026-11-04\\20261104T175723785577Z-correction.json", "sha256": "f417793fd9d607eaf42efe6c064104f6e2a2795a78b7177fd37d3f2b99908524", "cycle": "20261104T17:00Z", "issue_local_date": "2026-11-04", "farm_count": 11760}
+{"path": "outputs\\forecasts\\precipitation\\noaa-live\\issued\\2026-11-05\\20261105T200742866055Z.json", "sha256": "0f68e84999f8cfb9cbf606c3a3d4d9c43cfcd44661f624edaf2820011b710603", "cycle": "20261105T18:00Z", "issue_local_date": "2026-11-05", "farm_count": 11760}

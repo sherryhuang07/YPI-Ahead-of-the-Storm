@@ -32,6 +32,8 @@ try {
         Write-Host '  10 See streamflow forecasts trained on longer histories'
         Write-Host '  11 See the daily forecast-versus-observation check'
         Write-Host '  12 Explore connected stream gauges in neighboring states'
+        Write-Host '  13 See drinking-water system reservoir capacity'
+        Write-Host '  14 See the separate root-zone soil moisture model'
         Write-Host '  Q  Close this window'
         Write-Host ''
         $choice = Read-Host 'Your choice'
@@ -55,7 +57,8 @@ try {
                 Write-Host 'PRISM history and NOAA live precipitation forecast: See option 7'
                 Write-Host 'USGS groundwater observations: See option 8 for coverage and dates'
                 Write-Host 'USGS streamflow and seasonal statistics: See option 9'
-                Write-Host 'Soil datasets: Not connected'
+                Write-Host 'DPH drinking-water system reservoir capacity: See option 13; historical snapshot only'
+                Write-Host 'Root-zone soil moisture: Separate research forecast under option 14 (NASA NLDAS inputs; refresh with root-zone-update.ps1)'
                 Write-Host 'On-farm sensors across Connecticut: Not connected'
                 Write-Host 'Climate research papers: Not added'
                 Write-Host 'Local resources and assistance: Not added'
@@ -71,7 +74,9 @@ try {
             '10' { . (Join-Path $PSScriptRoot 'trained-streamflow-view.ps1') }
             '11' { . (Join-Path $PSScriptRoot 'prospective-view.ps1') }
             '12' { . (Join-Path $PSScriptRoot 'regional-streamflow-view.ps1') }
-            default { Write-Host 'Please choose a number from 1 to 12, or Q.' }
+            '13' { . (Join-Path $PSScriptRoot 'reservoir-view.ps1') }
+            '14' { . (Join-Path $PSScriptRoot 'root-zone-view.ps1') }
+            default { Write-Host 'Please choose a number from 1 to 14, or Q.' }
         }
         Write-Host ''
         Read-Host 'Press Enter to return to the main screen' | Out-Null

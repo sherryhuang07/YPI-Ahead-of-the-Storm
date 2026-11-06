@@ -1,0 +1,22 @@
+{
+  "version": "root-zone-v1",
+  "variable": "0-100 cm depth-averaged volumetric soil moisture",
+  "units": "m3/m3",
+  "source": "USGS NLDAS-2 Noah watershed aggregation, DOI 10.5066/P9IKHEM3",
+  "train_end": "2009-12-31",
+  "calibration_start": "2010-01-01",
+  "calibration_end": "2014-12-31",
+  "test_start": "2015-01-01",
+  "test_end": "2020-12-31",
+  "input_lag_days": 6,
+  "horizons_days": [1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+  "ridge_penalty": 1.0,
+  "minimum_training_examples": 1825,
+  "minimum_calibration_examples": 365,
+  "selection": "Per watershed and horizon, choose ridge only if calibration MAE is lower than persistence; otherwise persistence.",
+  "interval": "Calibration 90th percentile absolute error; nominal 90% band, not a guaranteed probability.",
+  "daily_period_note": "USGS metadata inconsistently says Central Standard Time and UTC-5. Original daily labels retained; exact local-date alignment not established.",
+  "evaluation_note": "Retrospective later-release archive with simulated six-day availability delay. Not an as-issued vintage test. Overlapping horizons and watersheds are correlated.",
+  "drought_model_connected": false,
+  "farm_specific_accuracy_established": false
+}

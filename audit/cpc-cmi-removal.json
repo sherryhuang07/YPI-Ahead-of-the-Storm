@@ -1,0 +1,146 @@
+{
+  "reason": "User requested deletion of CPC legacy CMI tables; excluded from all modeling",
+  "files": [
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\archive-index.html",
+      "Length": 6078
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\clidiv",
+      "Length": 32319
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\format4.f",
+      "Length": 5835
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\format5.f",
+      "Length": 5835
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\history.json",
+      "Length": 941735
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer00",
+      "Length": 4544750
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer01",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer02",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer03",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer04",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer05",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer06",
+      "Length": 4581850
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer07",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer08",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer09",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer10",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer11-PRELIM",
+      "Length": 5014100
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer12-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer13-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer14-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer15-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer16-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer17-PRELIM",
+      "Length": 4581850
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer18-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer19-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer20-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer21-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer97",
+      "Length": 4459000
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer98",
+      "Length": 4459000
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\data\\cmi\\palmer99",
+      "Length": 4459000
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\tmp\\palmer21-PRELIM",
+      "Length": 4495400
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\tmp\\cmi-archive.html",
+      "Length": 6019
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\tmp\\cmi-clidiv",
+      "Length": 32319
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\tmp\\cmi-format.f",
+      "Length": 5835
+    },
+    {
+      "FullName": "C:\\Users\\sherr\\OneDrive\\Documents\\ahead-of-the-storm-v1\\tmp\\cpc-palmer-index.html",
+      "Length": 12016
+    }
+  ],
+  "removed_at_utc": "2026-11-06T00:18:21.0126806Z"
+}

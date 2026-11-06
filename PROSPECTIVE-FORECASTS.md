@@ -33,6 +33,8 @@ Reporting-day publication delays mean comparisons arrive after the target date. 
 
 ## Operation and recovery
 
+Network recovery on November 5, 2026: restricted execution produced DNS failures for USGS, PRISM and NOAA although workstation DNS worked. Run the two daily Python commands with their authorized network permissions (`sandbox_permissions=require_escalated`). If permission is unavailable, report that explicitly. A connection failure does not establish that daily data were unpublished. Successful same-day retries refresh inputs and scores but retain the day's sealed records, including empty streamflow coverage. New scheduled issues use the recovered inputs under the existing model policy.
+
 Also run `.venv/Scripts/python.exe scripts/regional_daily.py` for connected neighboring-state stream gauges. Inspect `outputs/regional-prospective/last-run.json` and `scoreboard.json` and verify its separate sealed ledger. This adds 66 eligible gauge forecasts from 90 mapped connected gauges without changing the original Connecticut model. The remaining 24 lack an eligible trained forecast. See REGIONAL-STREAMFLOW.md and Farmer View option 12. Report failures in either job independently.
 
 Run `.venv/Scripts/python.exe scripts/prospective_daily.py` from this workspace. It also retrieves the current NOAA NBM QPF grid and writes a separate mapped farm forecast. Inspect `outputs/prospective/last-run.json` and `outputs/forecasts/precipitation/noaa-live/latest.json`; any source errors produce a nonzero exit and must be reported. Repeating a run on the same Connecticut date can refresh observations and scores but does not replace that day's sealed predictions. See NOAA-PRECIPITATION.md for the 11-day NBM horizon and labeled three-day extension.
