@@ -50,8 +50,13 @@ $nightJobs = @(
     @{ name = 'Coastal water temperature'; run = {
         & $python (Join-Path $root 'scripts\fetch_water_temp.py') --recent
         if ($LASTEXITCODE -eq 0) { & $python (Join-Path $root 'scripts\water_temp_daily.py') } } },
+    # Combined drought forecast: runs after every input above is refreshed. Refreshes Palmer and the
+    # Drought Monitor, then seals the next two weekly maps for the state and its 9 planning regions.
+    @{ name = 'Combined drought forecast'; run = {
+        & $python (Join-Path $root 'scripts\fetch_drought_data.py') --recent
+        if ($LASTEXITCODE -eq 0) { & $python (Join-Path $root 'scripts\drought_daily.py') } } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp } }
+    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature, drought'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp drought } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },

@@ -36,6 +36,7 @@ try {
         Write-Host '  14 See the separate root-zone soil moisture model'
         Write-Host '  15 See the forest fire danger forecast'
         Write-Host '  16 See the coastal water temperature forecast'
+        Write-Host '  17 See the combined drought forecast'
         Write-Host '  Q  Close this window'
         Write-Host ''
         $choice = Read-Host 'Your choice'
@@ -80,7 +81,8 @@ try {
             '14' { . (Join-Path $PSScriptRoot 'root-zone-view.ps1') }
             '15' { . (Join-Path $PSScriptRoot 'fire-danger-view.ps1') }
             '16' { . (Join-Path $PSScriptRoot 'water-temp-view.ps1') }
-            default { Write-Host 'Please choose a number from 1 to 16, or Q.' }
+            '17' { . (Join-Path $PSScriptRoot 'drought-view.ps1') }
+            default { Write-Host 'Please choose a number from 1 to 17, or Q.' }
         }
         Write-Host ''
         Read-Host 'Press Enter to return to the main screen' | Out-Null

@@ -33,4 +33,6 @@ Choose **15** for the forest fire danger forecast: 14 days of Connecticut's stat
 
 Choose **16** for the coastal water temperature forecast: 14 days of daily mean water temperature at Long Island Sound and Connecticut coastal stations from NOAA National Data Buoy Center readings only, tested on held-out 2022-2025 and sealed daily. See `WATER-TEMPERATURE.md`.
 
+Choose **17** for the combined drought forecast: the next two weekly U.S. Drought Monitor maps for Connecticut and its 9 planning regions (each farm takes its region's forecast), with the chance of the drought class worsening or improving, built from every model here plus the Palmer Drought Severity Index. Tested on held-out 2019-2026 and sealed daily. See `DROUGHT.md`.
+
 The geographic foundation is documented in `WATERSHEDS.md`. The original boundary download is in `data/watersheds.geojson`. Run `node build-watersheds.cjs` to rebuild the catalog and map from that saved download.
