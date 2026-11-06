@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all','inputs','forecast','check-archive')][string]$Step = 'all'
+    [ValidateSet('all','inputs','forecast','daily','check-archive')][string]$Step = 'all'
 )
 # Assemble recent daily root-zone inputs from NASA NLDAS-2 and issue the standalone
 # soil-moisture forecast. Uses the Windows-encrypted sign-in saved by
@@ -26,8 +26,12 @@ try {
         }
         $code = $LASTEXITCODE
     }
-    if ($code -eq 0 -and ($Step -eq 'all' -or $Step -eq 'forecast')) {
+    if ($code -eq 0 -and ($Step -in @('all','forecast','daily'))) {
         & $python 'forecast_root_zone.py'; $code = $LASTEXITCODE
+    }
+    # Sealed daily test ledger: one 14-day forecast per Connecticut day, scored later.
+    if ($code -eq 0 -and $Step -eq 'daily') {
+        & $python 'root_zone_daily.py'; $code = $LASTEXITCODE
     }
 } finally {
     Remove-Item Env:EARTHDATA_PASSWORD -ErrorAction SilentlyContinue

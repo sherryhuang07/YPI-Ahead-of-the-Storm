@@ -31,6 +31,24 @@ Farmer View option **11** shows the last completed check, forecast coverage and 
 
 Reporting-day publication delays mean comparisons arrive after the target date. The water scorer uses an additional conservative completion delay. Zero completed comparisons initially is expected; it is not a zero-error claim. Thousands of nearby fields can share grid cells, and rolling forecast windows overlap; these are not thousands of independent experiments.
 
+## Root-zone soil moisture ledger
+
+The standalone root-zone model has its own sealed daily test, separate from the three variables above: `scripts/root_zone_daily.py`, ledger `data/root-zone-prospective/ledger.sqlite`, sealed issues in `outputs/root-zone-prospective/issued/`, scorecard `outputs/root-zone-prospective/scoreboard.json`. It reuses this file's append-only rules (hash checks, no backdating, one issue per Connecticut day, scoring only with observations captured after issuance).
+
+- Each day, NASA NLDAS-2 inputs are assembled first (`root-zone-update.ps1 -Step daily`). The frozen model (registered once in `data/root-zone-prospective/model-v1.json`; any change stops the run) forecasts days 1-14 starting tomorrow from a 28-day input window ending six days before issue, for 69 watersheds.
+- Targets are the first captured NLDAS watershed values for each day (published about four days late). Scores include the unchanged-moisture baseline and the share of observations inside the sealed nominal 90% band.
+- First issue: Connecticut day **2026-11-05**, 69 of 69 watersheds, targets November 6-19.
+
+## Daily runner for every model
+
+`Run Daily Forecasts.cmd` (script `daily-forecasts.ps1`) runs all four ledgers independently: `prospective_daily.py`, `regional_daily.py`, then the root-zone daily step. One failing job does not stop the others; a summary goes to `outputs/daily-run-summary.json` and `activity.log`. Reservoir capacity has no daily public feed and therefore no daily forecast.
+
+**Scheduled on this PC:** Windows Task Scheduler task **"Ahead of the Storm - Daily Forecasts"** runs `daily-forecasts.ps1 -Scheduled` at **6:30 AM** every day (hidden window, current Windows user, only while signed in so the encrypted NASA sign-in can be unlocked). A run missed while the PC was off or asleep starts when it is next available. Each scheduled run's output is saved in `outputs/daily-run-logs/`.
+
+**Allowed hours: 5:00 AM to 10:00 PM Connecticut time.** Each variable gets one sealed issue per Connecticut day. Streamflow needs yesterday's clean USGS reading; a run just after midnight, before USGS publishes it, would seal an issue with streamflow withheld for the whole day, and a run after 10 PM could cross midnight partway through. Outside those hours the runner logs a skip (`-Force` overrides). If the earlier ChatGPT/Codex 6:00 AM automation is still active, the 6:30 run only refreshes observations and scores; same-day issues are never duplicated.
+
+To pause or remove the schedule: open Task Scheduler and disable or delete that task, or run `Unregister-ScheduledTask -TaskName 'Ahead of the Storm - Daily Forecasts'` in PowerShell.
+
 ## Operation and recovery
 
 Network recovery on November 5, 2026: restricted execution produced DNS failures for USGS, PRISM and NOAA although workstation DNS worked. Run the two daily Python commands with their authorized network permissions (`sandbox_permissions=require_escalated`). If permission is unavailable, report that explicitly. A connection failure does not establish that daily data were unpublished. Successful same-day retries refresh inputs and scores but retain the day's sealed records, including empty streamflow coverage. New scheduled issues use the recovered inputs under the existing model policy.

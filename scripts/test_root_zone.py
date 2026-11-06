@@ -57,4 +57,20 @@ class LiveInputTests(unittest.TestCase):
         padded=np.concatenate([window,np.full(lag,np.nan)])
         np.testing.assert_array_equal(features(series,59,'2020-07-01',lag),features(padded,len(padded)-1,'2020-07-01',lag))
 
+class DailyLedgerTests(unittest.TestCase):
+    def test_daily_rows_use_frozen_timing_and_never_fill_gaps(self):
+        from datetime import date,timedelta
+        from root_zone_daily import make_rows
+        issue=date(2026,11,5);policy={'input_lag_days':6,'horizons_days':list(range(1,15))}
+        m={'method':'persistence','interval_radius':.02,'model':None}
+        models={'a':{str(h):m for h in range(1,15)},'b':{str(h):m for h in range(1,15)}}
+        window={str(issue-timedelta(days=6+k)):.3-.001*k for k in range(28)}
+        future={str(issue-timedelta(days=k)):.9 for k in range(0,6)}  # newer than the cutoff: must be ignored
+        gap=dict(window);gap.pop(str(issue-timedelta(days=20)))
+        rows,missing=make_rows(models,policy,{'a':{**window,**future},'b':gap},issue)
+        self.assertEqual([r['id'] for r in rows],['a']);self.assertEqual(missing[0]['id'],'b')
+        self.assertEqual((rows[0]['dates'][0],rows[0]['dates'][-1]),('2026-11-06','2026-11-19'))
+        self.assertEqual(rows[0]['source_last_day'],'2026-10-30')
+        self.assertAlmostEqual(rows[0]['prediction'][0],.3);self.assertAlmostEqual(rows[0]['upper'][0],.32)
+
 if __name__=='__main__':unittest.main()

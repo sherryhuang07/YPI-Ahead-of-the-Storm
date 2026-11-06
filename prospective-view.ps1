@@ -3,7 +3,7 @@ if (-not (Test-Path $path)) { Write-Host 'The first daily check has not finished
 $score = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
 $run = Get-Content (Join-Path $PSScriptRoot 'outputs/prospective/last-run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host 'DAILY FORECAST CHECK - NO LOOKING AHEAD' -ForegroundColor Cyan
-Write-Host 'Daily schedule: 6:00 AM Connecticut time. Computer and app must be running.'
+Write-Host 'Daily schedule: 6:30 AM Connecticut time (Windows task "Ahead of the Storm - Daily Forecasts"). Computer must be on and signed in.'
 Write-Host "Last completed check (UTC): $($run.completed_at)"
 Write-Host 'Original predictions are timestamped and kept. Later readings only score them.'
 Write-Host ('New comparisons scored in this check: {0}.' -f $run.new_comparisons)
@@ -82,4 +82,23 @@ if ($run.source_errors.Count) {
         elseif ($errorText -match 'NOAA NBM|nomads\.ncep\.noaa\.gov') { Write-Host 'NOAA live precipitation guidance: download failed.' -ForegroundColor Yellow }
         else { Write-Host 'A data source download failed.' -ForegroundColor Yellow }
     }
+}
+$rzBoard = Join-Path $PSScriptRoot 'outputs/root-zone-prospective/scoreboard.json'
+$rzRun = Join-Path $PSScriptRoot 'outputs/root-zone-prospective/last-run.json'
+if ((Test-Path -LiteralPath $rzBoard) -and (Test-Path -LiteralPath $rzRun)) {
+    $rz = Get-Content -LiteralPath $rzBoard -Raw -Encoding UTF8 | ConvertFrom-Json
+    $rzLast = Get-Content -LiteralPath $rzRun -Raw -Encoding UTF8 | ConvertFrom-Json
+    $rzIssue = @($rz.issues | Sort-Object issued_at | Select-Object -Last 1)
+    Write-Host "`nroot-zone soil moisture - separate ledger" -ForegroundColor Green
+    if ($rzIssue.Count) { Write-Host "Latest issue: $($rzIssue[0].issued_at) UTC (Connecticut day $($rzIssue[0].day))." }
+    Write-Host ('Watersheds forecast: {0}. Withheld: {1}. NASA NLDAS inputs {2} through {3}.' -f $rzLast.available_forecasts,$rzLast.unavailable_forecasts,$rzLast.input_window[0],$rzLast.input_window[1])
+    $rzMetrics = @($rz.by_variable_and_lead | Where-Object { $_.variable -eq 'root-zone' })
+    if (-not $rzMetrics.Count) {
+        Write-Host 'Waiting for target days to pass and NASA data to arrive (about four days behind). No accuracy score yet.'
+    } else {
+        Write-Host 'Forecast day   Comparisons   Average error (pct points)   Unchanged-moisture error'
+        foreach ($m in $rzMetrics) { Write-Host ('{0,12}   {1,11}   {2,26:N2}   {3,24:N2}' -f $m.forecast_day,$m.comparisons,($m.mae*100),($m.baseline_mae*100)) }
+        if ($null -ne $rz.interval.coverage) { Write-Host ('Observed values inside the nominal 90% band: {0:P0} of {1}.' -f $rz.interval.coverage,$rz.interval.scored) }
+    }
+    Write-Host 'Scores compare with NASA modeled watershed moisture, not farm sensors.'
 }

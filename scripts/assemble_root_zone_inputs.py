@@ -16,6 +16,7 @@ import csv
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import numpy as np
 from root_zone_live import (ROOT, INPUTS, login_session, fetch_hour, day_hours, load_weights,
                             watershed_means, daterange, parse_day, DEFAULT_DAY_START_UTC_HOUR)
@@ -125,7 +126,7 @@ def live(args):
     check = INPUTS / 'archive-check.json'
     start_hour = (json.loads(check.read_text())['best_day_start_utc_hour'] if check.exists()
                   else DEFAULT_DAY_START_UTC_HOUR)
-    issue = parse_day(args.issue) if args.issue else datetime.now().date()
+    issue = parse_day(args.issue) if args.issue else datetime.now(ZoneInfo('America/New_York')).date()
     lag = POLICY['input_lag_days']
     first = issue - timedelta(days=lag + WINDOW - 1)
     through = parse_day(args.through) if args.through else datetime.now(timezone.utc).date() - timedelta(days=1)
