@@ -37,13 +37,24 @@ $learning = Join-Path $root 'scripts\learning_daily.py'
 $nightJobs = @(
     @{ name = 'Precipitation and groundwater wells (+ NOAA NBM)'; run = { & $python $prospective --only precipitation groundwater } },
     @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } },
+    # Fire danger: archive DEEP's latest rating (the target), refresh recent airport weather,
+    # rebuild the index history, then seal the 14-day forecast. Each step stops the chain if it fails.
+    @{ name = 'Fire danger'; run = {
+        $fire = @(@('fetch_fire_danger_reports.py'), @('fetch_fire_weather.py','--merge-days','45'), @('build_fire_danger_history.py'), @('fire_danger_daily.py'))
+        $global:LASTEXITCODE = 0
+        foreach ($step in $fire) {
+            & $python (Join-Path $root ('scripts\' + $step[0])) @($step | Select-Object -Skip 1)
+            if ($LASTEXITCODE -ne 0) { Write-Host ('Fire danger step failed: ' + $step[0]) -ForegroundColor Yellow; break }
+        } } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: precipitation, groundwater, root-zone'; run = { & $python $learning --models precipitation groundwater root-zone } }
+    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
     @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
-    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow regional-streamflow } }
+    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow regional-streamflow } },
+    # DEEP posts the day's fire danger rating before about 8 AM; a morning capture may get it early.
+    @{ name = 'DEEP fire danger rating capture'; run = { & $python (Join-Path $root 'scripts\fetch_fire_danger_reports.py') } }
 )
 $jobs = switch ($Part) { 'night' { $nightJobs } 'morning' { $morningJobs } default { $nightJobs + $morningJobs } }
 $results = @()
