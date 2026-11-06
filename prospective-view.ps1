@@ -102,3 +102,21 @@ if ((Test-Path -LiteralPath $rzBoard) -and (Test-Path -LiteralPath $rzRun)) {
     }
     Write-Host 'Scores compare with NASA modeled watershed moisture, not farm sensors.'
 }
+$learnRoot = Join-Path $PSScriptRoot 'outputs/learning'
+if (Test-Path -LiteralPath $learnRoot) {
+    Write-Host "`nLEARNING VERSIONS - original vs learning, same target days" -ForegroundColor Cyan
+    Write-Host 'Each day, before forecasting, the learning version updates its weights from newly scored comparisons. Originals stay fixed.'
+    foreach ($m in @('precipitation','groundwater','streamflow','regional-streamflow','root-zone')) {
+        $lr = Join-Path $learnRoot "$m/last-run.json"; $lb = Join-Path $learnRoot "$m/scoreboard.json"
+        if (-not (Test-Path -LiteralPath $lr)) { continue }
+        $run = Get-Content -LiteralPath $lr -Raw -Encoding UTF8 | ConvertFrom-Json
+        Write-Host ("{0}: learned from {1} scored comparisons so far; today: {2}." -f $m,$run.total_comparisons_learned,$run.issued)
+        if (Test-Path -LiteralPath $lb) {
+            $b = Get-Content -LiteralPath $lb -Raw -Encoding UTF8 | ConvertFrom-Json
+            $rowsL = @($b.by_variable_and_lead | Where-Object { $_.forecast_day -in 1,7,14 })
+            if (-not $rowsL.Count) { Write-Host '  No learning forecast scored yet.' }
+            foreach ($r in $rowsL) { Write-Host ('  Day {0}: learning error {1:N3} vs original {2:N3} ({3} comparisons)' -f $r.forecast_day,$r.mae,$r.baseline_mae,$r.comparisons) }
+        }
+    }
+    Write-Host 'Errors are in each model''s units (rain mm, well feet, flow cfs, soil water m3/m3). Early results are few and correlated.'
+}

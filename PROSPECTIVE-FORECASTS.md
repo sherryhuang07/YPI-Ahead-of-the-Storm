@@ -39,14 +39,24 @@ The standalone root-zone model has its own sealed daily test, separate from the 
 - Targets are the first captured NLDAS watershed values for each day (published about four days late). Scores include the unchanged-moisture baseline and the share of observations inside the sealed nominal 90% band.
 - First issue: Connecticut day **2026-11-05**, 69 of 69 watersheds, targets November 6-19.
 
+## Learning versions (daily weight updates)
+
+Each original model keeps its frozen weights, so its prospective score stays a fair yardstick. Beside it, a **learning version** (`scripts/learning_daily.py`, policy `learning-v1`) has its own sealed ledger in `data/learning/<model>/` and `outputs/learning/<model>/` for precipitation, groundwater, Connecticut streamflow, neighboring-state streamflow and root-zone soil moisture.
+
+- **Before each new forecast**, it takes every comparison newly scored in the original ledger (an original prediction and the observed value for that day, both captured before now) and updates that location's weights for that forecast day by recursive least squares, oldest comparison first. Each comparison is learned exactly once (tracked by ledger row).
+- Its forecast is the original corrected by those weights: `learned = p + s*w0 + w1*(p - ref)`, where `w0` removes typical over/under-prediction and `w1` corrects over- or under-reaction relative to the location's reference level. Streamflow works in log space. Weights start at zero, change cautiously (prior variance 0.25 in units of the model's scale `s`; forgetting 0.99; slope clipped to ±0.5), and keep results in physical bounds (no negative rain or flow; soil water 0–1).
+- Each sealed learning issue records the original forecast's hash, a snapshot of the weights used and the last comparison row applied. Its `baseline` is the original prediction, so `outputs/learning/<model>/scoreboard.json` compares learning (`mae`) with the original (`baseline_mae`) on identical cases.
+- Learning runs at the end of each part: night for precipitation, groundwater and root-zone; morning for both streamflow models. Until comparisons are scored (a day or more for wells and gauges, about four days for NASA soil moisture, PRISM's delay for rain), learning forecasts equal the originals.
+- Farmer View option 11 shows both. A learning version should replace an original only after it has beaten it on enough scored, non-overlapping periods; that decision is not automated.
+
 ## Daily runner for every model
 
 `daily-forecasts.ps1` runs each ledger independently (one failing job never stops the others) in two parts, because the models need different data to be ready:
 
 | Part | Scheduled (Connecticut time) | Ledgers | Why then |
 |---|---|---|---|
-| `-Part night` | **12:05 AM** | precipitation baseline (+ NOAA NBM archive), groundwater wells, root-zone soil moisture | none of these needs yesterday's readings; the day's forecast is sealed as soon as the day begins |
-| `-Part morning` | **6:30 AM** | Connecticut stream gauges, neighboring-state stream gauges | the frozen streamflow models need yesterday's USGS daily reading, which is not published around midnight |
+| `-Part night` | **12:05 AM** | precipitation baseline (+ NOAA NBM archive), groundwater wells, root-zone soil moisture, then their learning versions | none of these needs yesterday's readings; the day's forecast is sealed as soon as the day begins |
+| `-Part morning` | **6:30 AM** | Connecticut stream gauges, neighboring-state stream gauges, then their learning versions | the frozen streamflow models need yesterday's USGS daily reading, which is not published around midnight |
 
 `prospective_daily.py --only ...` issues just the listed variables (observations and scores are refreshed for all of them); `--skip-noaa` leaves out the NBM download in the morning part. `Run Daily Forecasts.cmd` runs both parts by hand (`-Part all`, morning hours only). Summaries go to `outputs/daily-run-summary-<part>.json` and `activity.log`; scheduled runs keep their full output in `outputs/daily-run-logs/`. Reservoir capacity has no daily public feed and therefore no daily forecast.
 

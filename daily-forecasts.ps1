@@ -9,7 +9,9 @@
 #
 # Jobs run independently; one failure never blocks or alters the others. Each variable gets one
 # sealed issue per Connecticut day; re-running refreshes observations and scores but never
-# replaces a sealed forecast. Reservoir capacity has no daily public feed (see RESERVOIRS.md).
+# replaces a sealed forecast. Each part ends with the learning versions of its models
+# (scripts/learning_daily.py), which update their weights from newly scored comparisons first.
+# Reservoir capacity has no daily public feed (see RESERVOIRS.md).
 param([ValidateSet('all','night','morning')][string]$Part = 'all', [switch]$Scheduled, [switch]$Force)
 $ErrorActionPreference = 'Continue'
 $root = $PSScriptRoot
@@ -31,13 +33,17 @@ if (($ctNow.Hour -lt $earliest -or $ctNow.Hour -ge 22) -and -not $Force) {
     exit 0
 }
 $prospective = Join-Path $root 'scripts\prospective_daily.py'
+$learning = Join-Path $root 'scripts\learning_daily.py'
 $nightJobs = @(
     @{ name = 'Precipitation and groundwater wells (+ NOAA NBM)'; run = { & $python $prospective --only precipitation groundwater } },
-    @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } }
+    @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } },
+    # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
+    @{ name = 'Learning versions: precipitation, groundwater, root-zone'; run = { & $python $learning --models precipitation groundwater root-zone } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
-    @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } }
+    @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
+    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow regional-streamflow } }
 )
 $jobs = switch ($Part) { 'night' { $nightJobs } 'morning' { $morningJobs } default { $nightJobs + $morningJobs } }
 $results = @()
