@@ -27,6 +27,6 @@ Choose **13** for Connecticut DPH drinking-water surface-capacity data and the p
 
 Activity is saved on this computer in `activity.log`. Earlier entries may appear when you reopen the windows. Data import scripts request public datasets online; browsing the saved results works locally.
 
-Choose **14** for the standalone root-zone soil moisture experiment: one-through-fourteen-day historical predictions using USGS/NLDAS watershed histories, with held-out testing, plus a live research forecast from recent NASA NLDAS-2 inputs (run `root-zone-update.ps1` to refresh). It does not feed an overall drought model. Farm sensor validation remains pending. CPC legacy tables have been deleted. See `ROOT-ZONE-SOIL-MOISTURE.md`.
+Choose **14** for the standalone root-zone soil moisture experiment: one-through-fourteen-day historical predictions using USGS/NLDAS watershed histories, with held-out testing, plus a live research forecast from recent NASA NLDAS-2 inputs (double-click `Refresh Soil Moisture.cmd` to refresh). It does not feed an overall drought model. Farm sensor validation remains pending. CPC legacy tables have been deleted. See `ROOT-ZONE-SOIL-MOISTURE.md`.
 
 The geographic foundation is documented in `WATERSHEDS.md`. The original boundary download is in `data/watersheds.geojson`. Run `node build-watersheds.cjs` to rebuild the catalog and map from that saved download.

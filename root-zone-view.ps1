@@ -41,7 +41,7 @@ if (Test-Path -LiteralPath $livePath) {
     }
     Write-Host ('Full table: outputs/root-zone/live/{0}/forecast.csv' -f $live.run)
 } else {
-    Write-Host 'No live forecast yet. Run root-zone-update.ps1 to assemble recent NASA inputs and issue one.' -ForegroundColor Yellow
+    Write-Host 'No live forecast yet. Double-click Refresh Soil Moisture.cmd to assemble recent NASA inputs and issue one.' -ForegroundColor Yellow
 }
 Write-Host 'Still needed: NASA SMAP comparison and farm sensors.'
 Write-Host 'No farm-specific accuracy or overall drought prediction is claimed.'

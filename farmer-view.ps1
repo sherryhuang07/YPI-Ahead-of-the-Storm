@@ -58,7 +58,7 @@ try {
                 Write-Host 'USGS groundwater observations: See option 8 for coverage and dates'
                 Write-Host 'USGS streamflow and seasonal statistics: See option 9'
                 Write-Host 'DPH drinking-water system reservoir capacity: See option 13; historical snapshot only'
-                Write-Host 'Root-zone soil moisture: Separate research forecast under option 14 (NASA NLDAS inputs; refresh with root-zone-update.ps1)'
+                Write-Host 'Root-zone soil moisture: Separate research forecast under option 14 (NASA NLDAS inputs; refresh with Refresh Soil Moisture.cmd)'
                 Write-Host 'On-farm sensors across Connecticut: Not connected'
                 Write-Host 'Climate research papers: Not added'
                 Write-Host 'Local resources and assistance: Not added'

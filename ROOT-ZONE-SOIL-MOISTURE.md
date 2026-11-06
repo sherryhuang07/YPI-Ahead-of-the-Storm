@@ -71,7 +71,7 @@ of independent experiments.
 
 ## Running and viewing
 
-Use Farmer View option **14**; refresh the live forecast with `root-zone-update.ps1`. The background activity view includes the new
+Use Farmer View option **14**; refresh the live forecast by double-clicking `Refresh Soil Moisture.cmd`. The background activity view includes the new
 module. Scripts run from the workspace with `.venv/Scripts/python.exe`:
 
 1. `scripts/fetch_root_zone_history.py` — authorized network download (~2.6 GB).
@@ -87,8 +87,9 @@ make it a fresh independent holdout.
 
 ## Live daily inputs and current forecast
 
-The frozen model is connected to current data. Run `root-zone-update.ps1`
-(uses the saved, Windows-encrypted NASA sign-in) or its steps separately:
+The frozen model is connected to current data. Double-click `Refresh Soil Moisture.cmd`
+(it runs `root-zone-update.ps1` with the saved, Windows-encrypted NASA sign-in and
+without changing the Windows script policy), or run its steps separately:
 
 1. `scripts/build_root_zone_basins.py` — boundaries for all 69 watersheds from USGS
    NLDI (cached in `data/hydrography/nldi`, missing ones fetched to
