@@ -45,25 +45,39 @@ def main():
    with path.open('xb') as f:f.write(r.content)
   return h,path
  with ThreadPoolExecutor(max_workers=6) as pool: grids=dict(pool.map(one,hours))
- rows={}
+ # Files carry several overlapping accumulations (QPF01, QPF06, QPF24 ending at the same time).
+ # Summing whichever band comes first double-counted rain (a QPF24 band is listed first every
+ # 6 hours). Instead, chain non-overlapping intervals forward from the cycle time: at each
+ # valid time take the accumulation that starts exactly where coverage ended (shortest first).
+ cycle_start=datetime.strptime(day+cycle,'%Y%m%d%H').replace(tzinfo=timezone.utc)
+ xs=ys=None;candidates={};pop_by_end={}
  for h,path in sorted(grids.items()):
   with rasterio.open(path) as src:
-   band=next((i for i in range(1,src.count+1) if str(src.tags(i).get('GRIB_ELEMENT','')).startswith('QPF')),None)
-   popband=next((i for i in range(1,src.count+1) if str(src.tags(i).get('GRIB_ELEMENT','')).startswith('PoP')),None)
-   if band is None and popband is None:continue
-   tags=src.tags(band or popband)
-   # QPF01/QPF03/QPF06 encode accumulation length; forecast lead seconds do not.
-   interval=int(re.search(r'QPF(\d+)',src.tags(band)['GRIB_ELEMENT']).group(1)) if band else 1
-   end=datetime.fromtimestamp(int(tags['GRIB_VALID_TIME']),timezone.utc)
-   start=end-timedelta(hours=interval)
-   xs,ys=transform('EPSG:4326',src.crs,[p[1] for p in points],[p[2] for p in points])
-   vals=list(src.sample(list(zip(xs,ys)),indexes=band,masked=True)) if band else [None]*len(points)
-   pops=list(src.sample(list(zip(xs,ys)),indexes=popband,masked=True)) if popband else [None]*len(points)
-   for (identifier,_,_),v,pv in zip(points,vals,pops):
-    value=float(v[0]) if v is not None and not np.ma.is_masked(v[0]) else None
-    probability=float(pv[0])/100 if pv is not None and not np.ma.is_masked(pv[0]) else None
-    if value is None and probability is None:continue
-    rows.setdefault(identifier,[]).append(dict(start=start.isoformat(),end=end.isoformat(),mm=max(0,value) if value is not None else None,probability=probability,forecast_hour=h,interval_hours=interval))
+   if xs is None:xs,ys=transform('EPSG:4326',src.crs,[p[1] for p in points],[p[2] for p in points])
+   for i in range(1,src.count+1):
+    element=str(src.tags(i).get('GRIB_ELEMENT',''));m=re.fullmatch(r'(QPF|PoP)(\d+)',element)
+    if not m:continue
+    end=datetime.fromtimestamp(int(src.tags(i)['GRIB_VALID_TIME']),timezone.utc);hours_=int(m.group(2))
+    values=[None if np.ma.is_masked(v[0]) else float(v[0]) for v in src.sample(list(zip(xs,ys)),indexes=i,masked=True)]
+    if m.group(1)=='QPF':candidates.setdefault(end,[]).append((hours_,h,values))
+    elif hours_==min([hours_]+[k for k,_ in pop_by_end.get(end,[])]):pop_by_end[end]=[(hours_,values)]
+ # Hourly files later switch to 6-hour windows on a different alignment, so find the furthest
+ # time reachable by contiguous intervals, then walk back taking the shortest interval at each step.
+ reachable={cycle_start}
+ for end in sorted(candidates):
+  if any(end-timedelta(hours=c[0]) in reachable for c in candidates[end]):reachable.add(end)
+ chosen=[];node=max(reachable)
+ while node!=cycle_start:
+  c=min((c for c in candidates[node] if node-timedelta(hours=c[0]) in reachable),key=lambda c:c[0])
+  chosen.append((node,)+c);node=node-timedelta(hours=c[0])
+ chosen.reverse()
+ rows={}
+ for end,interval,h,values in chosen:
+  start=end-timedelta(hours=interval);pops=pop_by_end.get(end,[(None,[None]*len(points))])[0][1]
+  for (identifier,_,_),value,pv in zip(points,values,pops):
+   probability=pv/100 if pv is not None else None
+   if value is None and probability is None:continue
+   rows.setdefault(identifier,[]).append(dict(start=start.isoformat(),end=end.isoformat(),mm=max(0,value) if value is not None else None,probability=probability,forecast_hour=h,interval_hours=interval))
  forecast=[]
  for identifier,intervals in rows.items():
   totals={};coverage={};probabilities={}
@@ -120,7 +134,7 @@ def main():
   prior=read(ROOT/previous['path'])
   if prior.get('source_code_sha256')==manifest.get('source_code_sha256'):
    print('A live NOAA precipitation issue from this code version is already recorded today; original retained.');return
-  manifest['correction_of_sha256']=previous['sha256'];manifest['correction_reason']='Reissued after identifying and excluding incomplete local NBM calendar-day totals; original retained.'
+  manifest['correction_of_sha256']=previous['sha256'];manifest['correction_reason']='Reissued by a changed code version (source_code_sha256 differs from the original); see audit/ for the specific reason; original retained.'
  stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ');issued=out/'issued'/today;issued.mkdir(parents=True,exist_ok=True)
  issue_path=issued/(stamp+'.json')
  with issue_path.open('x',encoding='utf-8') as f:json.dump(manifest,f,allow_nan=False)

@@ -1,0 +1,51 @@
+{
+  "recorded_at": "2026-11-06T05:25:00+00:00",
+  "subject": "NOAA NBM live precipitation: overlapping accumulations double-counted",
+  "problem": "scripts/fetch_noaa_precip.py used the first QPF band in each NBM GRIB file. Every 6 forecast hours the first band is QPF24 (a 24-hour total), which was added on top of the hourly QPF01 amounts covering the same hours, inflating rainy days several-fold. In 6-hourly files the first band was a 1-hour value, so days 2-11 never had full coverage and silently used the probability fallback.",
+  "example": "Cycle 2026-11-06 04Z, Yale Farm, Connecticut day 2026-11-06: 208.6 mm reported vs 66.5 mm from non-overlapping hourly QPF (NWS OKX gridpoint forecast at 02:34Z: 36.7 mm).",
+  "fix": "Read all QPF bands and chain non-overlapping intervals from the cycle time (hourly, then 6-hourly from the alignment point), shortest first. Coverage now reaches hour 260: direct NBM QPF for about 10 days.",
+  "affected_issues": [
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-04/20261104T174031783047Z.json",
+      "sha256": "9a4184d69770fd91316b8332a3f835c4750be470c629bb766d69384aaaa33094"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-04/20261104T174506949540Z.json",
+      "sha256": "86d916284375f081d48e7bd1196f9fc82db9d26bac7fd8fe577b185a61a51ad9"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-04/20261104T175431193918Z.json",
+      "sha256": "7978d09a7d0bb5c66a30af5a4283ca4ec5192f7c5205c3c9f47e3fca1b9c30d2"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-04/20261104T175635556332Z.json",
+      "sha256": "6c342fb615814405d2014bf085514e127a37d2a6f19ca50946245fe371717aef"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-04/20261104T175723785577Z-correction.json",
+      "sha256": "f417793fd9d607eaf42efe6c064104f6e2a2795a78b7177fd37d3f2b99908524"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-05/20261105T200742866055Z.json",
+      "sha256": "0f68e84999f8cfb9cbf606c3a3d4d9c43cfcd44661f624edaf2820011b710603"
+    },
+    {
+      "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-06/20261106T051044200531Z.json",
+      "sha256": "31c7912c23f7045c8a0d3f190953e4e70500454ff68bd81dbf8555529093e5df"
+    }
+  ],
+  "correction": {
+    "path": "outputs/forecasts/precipitation/noaa-live/issued/2026-11-06/20261106T051918320098Z.json",
+    "sha256": "4a02f41f2bb546d14eb33702a27ab2e969bca58f6599d17314354503f54c6e21",
+    "corrects_sha256": "31c7912c23f7045c8a0d3f190953e4e70500454ff68bd81dbf8555529093e5df",
+    "note": "Its embedded correction_reason text is the script's older generic wording; this audit record states the actual reason."
+  },
+  "impact_2026_11_06": {
+    "farms": 11760,
+    "mean_abs_daily_change_mm": 2.879735792601967,
+    "mean_14day_total_original_mm": 53.62881314600245,
+    "mean_14day_total_corrected_mm": 13.312574177194124
+  },
+  "not_affected": "The sealed precipitation baseline ledger (PRISM 42-day mean) and all other ledgers. No NBM issue had been scored.",
+  "originals": "All original NBM issue files are retained unchanged. Issues from 2026-11-04 and 2026-11-05 cannot be reissued (their days have started) and remain flagged here."
+}
