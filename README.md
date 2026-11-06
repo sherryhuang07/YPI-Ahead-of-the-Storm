@@ -31,4 +31,6 @@ Choose **14** for the standalone root-zone soil moisture experiment: one-through
 
 Choose **15** for the forest fire danger forecast: 14 days of Connecticut's statewide class (LOW to EXTREME, DEEP's scale), recalculated with the 1964 national fire-danger method from airport weather and NOAA forecasts, checked against DEEP's published ratings and tested daily. See `FIRE-DANGER.md`.
 
+Choose **16** for the coastal water temperature forecast: 14 days of daily mean water temperature at Long Island Sound and Connecticut coastal stations from NOAA National Data Buoy Center readings only, tested on held-out 2022-2025 and sealed daily. See `WATER-TEMPERATURE.md`.
+
 The geographic foundation is documented in `WATERSHEDS.md`. The original boundary download is in `data/watersheds.geojson`. Run `node build-watersheds.cjs` to rebuild the catalog and map from that saved download.

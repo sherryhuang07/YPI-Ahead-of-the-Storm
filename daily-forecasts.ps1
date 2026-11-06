@@ -46,8 +46,12 @@ $nightJobs = @(
             & $python (Join-Path $root ('scripts\' + $step[0])) @($step | Select-Object -Skip 1)
             if ($LASTEXITCODE -ne 0) { Write-Host ('Fire danger step failed: ' + $step[0]) -ForegroundColor Yellow; break }
         } } },
+    # Coastal water temperature: refresh recent NDBC readings, then seal the 14-day forecast.
+    @{ name = 'Coastal water temperature'; run = {
+        & $python (Join-Path $root 'scripts\fetch_water_temp.py') --recent
+        if ($LASTEXITCODE -eq 0) { & $python (Join-Path $root 'scripts\water_temp_daily.py') } } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger } }
+    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },

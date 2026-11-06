@@ -106,7 +106,7 @@ $learnRoot = Join-Path $PSScriptRoot 'outputs/learning'
 if (Test-Path -LiteralPath $learnRoot) {
     Write-Host "`nLEARNING VERSIONS - original vs learning, same target days" -ForegroundColor Cyan
     Write-Host 'Each day, before forecasting, the learning version updates its weights from newly scored comparisons. Originals stay fixed.'
-    foreach ($m in @('precipitation','groundwater','streamflow','regional-streamflow','root-zone','fire-danger')) {
+    foreach ($m in @('precipitation','groundwater','streamflow','regional-streamflow','root-zone','fire-danger','water-temp')) {
         $lr = Join-Path $learnRoot "$m/last-run.json"; $lb = Join-Path $learnRoot "$m/scoreboard.json"
         if (-not (Test-Path -LiteralPath $lr)) { continue }
         $run = Get-Content -LiteralPath $lr -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -118,5 +118,5 @@ if (Test-Path -LiteralPath $learnRoot) {
             foreach ($r in $rowsL) { Write-Host ('  Day {0}: learning error {1:N3} vs original {2:N3} ({3} comparisons)' -f $r.forecast_day,$r.mae,$r.baseline_mae,$r.comparisons) }
         }
     }
-    Write-Host 'Errors are in each model''s units (rain mm, well feet, flow cfs, soil water m3/m3, fire danger classes). Early results are few and correlated.'
+    Write-Host 'Errors are in each model''s units (rain mm, well feet, flow cfs, soil water m3/m3, fire danger classes, water degrees C). Early results are few and correlated.'
 }

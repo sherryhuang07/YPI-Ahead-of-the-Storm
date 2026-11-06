@@ -36,6 +36,7 @@ MODELS = {
     'regional-streamflow': dict(base='data/regional-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'root-zone': dict(base='data/root-zone-prospective', kind='root-zone', transform='identity', scale=0.01, low=0.0, high=1.0),
     'fire-danger': dict(base='data/fire-danger-prospective', kind='fire-danger', transform='identity', scale=0.5, low=0.0, high=4.0),
+    'water-temp': dict(base='data/water-temp-prospective', kind='water-temp', transform='identity', scale=0.5, low=-3.0, high=35.0),
 }
 LEADS = 14
 POLICY = dict(version='learning-v1', forgetting=0.99, prior_variance=[0.25, 0.25], slope_limit=0.5,
