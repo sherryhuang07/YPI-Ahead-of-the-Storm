@@ -34,6 +34,14 @@ if (($ctNow.Hour -lt $earliest -or $ctNow.Hour -ge 22) -and -not $Force) {
     if ($Scheduled) { Stop-Transcript | Out-Null }
     exit 0
 }
+# Only one part at a time: night and morning share the forecast database. Wait up to 2 hours.
+$lock = New-Object System.Threading.Mutex($false, 'Global\AheadOfTheStormDailyForecasts')
+try { $haveLock = $lock.WaitOne([TimeSpan]::FromHours(2)) } catch [System.Threading.AbandonedMutexException] { $haveLock = $true }
+if (-not $haveLock) { Write-Host 'Another forecast run is still going after 2 hours; stopping.' -ForegroundColor Yellow; if ($Scheduled) { Stop-Transcript | Out-Null }; exit 1 }
+# A scheduled run waits a minute first: when the laptop wakes only briefly to hibernate, Task
+# Scheduler starts missed runs in those seconds; this way they stop before doing anything.
+if ($Scheduled -and -not $Force) { Start-Sleep -Seconds 60 }
+$ctNow = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Eastern Standard Time')
 # Scheduled retries: a part that already finished without failures today exits at once.
 # (Forecasts are sealed once per Connecticut day anyway; this just avoids repeating downloads.)
 $summaryPath = Join-Path $root ('outputs\daily-run-summary-' + $Part + '.json')
