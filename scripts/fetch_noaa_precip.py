@@ -13,18 +13,26 @@ BASE='https://nomads.ncep.noaa.gov'; OUT=ROOT/'data/noaa-nbm'; USER={'User-Agent
 def get(url,params=None):
  r=requests.get(url,params=params,headers=USER,timeout=90);r.raise_for_status();return r
 
-def locate():
- now=datetime.now(timezone.utc);days=[now.strftime('%Y%m%d'),(now-timedelta(days=1)).strftime('%Y%m%d')]
+def locate(min_last_hour=240, not_after=None):
+ # Newest cycle whose upload has reached hour 240 (NOAA posts a cycle's hours over about an hour; taking a cycle
+ # as soon as f001 appears gave the fire danger and drought jobs only a few hours of forecast).
+ # If no cycle in the last two days reaches it, fall back to the newest cycle that has f001.
+ # not_after: ignore cycles issued after this UTC time (fire danger needs a cycle that still covers 1 PM today).
+ now=datetime.now(timezone.utc);days=[now.strftime('%Y%m%d'),(now-timedelta(days=1)).strftime('%Y%m%d')];fallback=None
  for day in days:
   html=get(BASE+'/pub/data/nccf/com/blend/prod/blend.'+day+'/').text
   cycles=re.findall(r'href="(\d{2})/"',html)
   for cycle in sorted(cycles,key=int,reverse=True):
+   if not_after is not None and datetime.strptime(day+cycle,'%Y%m%d%H').replace(tzinfo=timezone.utc)>not_after:continue
    url=f'{BASE}/pub/data/nccf/com/blend/prod/blend.{day}/{cycle}/core/'
    try:text=get(url).text
    except requests.RequestException:continue
    files=re.findall(r'href="(blend\.t\d{2}z\.core\.f\d{3}\.co\.grib2)"',text)
    if 'blend.t'+cycle+'z.core.f001.co.grib2' in files:
-    return day,cycle,files,url
+    if max(int(re.search(r'f(\d{3})',x).group(1)) for x in files)>=min_last_hour:
+     return day,cycle,files,url
+    fallback=fallback or (day,cycle,files,url)
+ if fallback:return fallback
  raise RuntimeError('No current NBM CONUS forecast cycle found')
 
 def main():

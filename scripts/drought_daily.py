@@ -11,6 +11,10 @@ The ledger's scored value is the Drought Severity and Coverage Index (DSCI, 0-50
 D0+..D4+ percentages, the chance the class worsens or improves, and the class (current class,
 stepped one class only when a change is more likely than not) are stored with it. Baseline: the current map,
 unchanged. Observations are Drought Monitor values first downloaded after the issue.
+
+--version v2 runs drought-v2 (adds USGS VegDRI) in its own ledger (data/drought-v2-prospective,
+outputs/drought-v2-prospective), from the frozen model in outputs/drought-v2. Run
+`vegdri-update.ps1 -Recent` first so the newest VegDRI week is included.
 """
 import argparse
 import csv
@@ -23,13 +27,16 @@ from drought_features import load_all, drivers, normal_rain_per_day
 from train_drought import predict, finish, dsci, category, prob, LEVELS
 
 KIND = 'drought'
+VERSIONS = {'v1': dict(version='drought-v1', data='data/drought-prospective', out='outputs/drought-prospective', trained='outputs/drought', vegdri=False),
+            'v2': dict(version='drought-v2', data='data/drought-v2-prospective', out='outputs/drought-v2-prospective', trained='outputs/drought-v2', vegdri=True)}
+V = VERSIONS['v1']
 
 
 def registry():
-    path = p.D / 'model-v1.json'
+    path = p.D / ('model-%s.json' % V['version'].split('-')[-1])
     if not path.exists():
-        latest = read(ROOT / 'outputs/drought/latest.json'); run = ROOT / 'outputs/drought/runs' / latest['run']; sealed = read(run / 'manifest.json')
-        p.exclusive(path, dict(created_at=p.utc().isoformat(), version='drought-v1', trained_run=latest['run'],
+        latest = read(ROOT / V['trained'] / 'latest.json'); run = ROOT / V['trained'] / 'runs' / latest['run']; sealed = read(run / 'manifest.json')
+        p.exclusive(path, dict(created_at=p.utc().isoformat(), version=V['version'], trained_run=latest['run'],
                                model_path=str((run / 'model.json').relative_to(ROOT)), model_sha256=sealed['files']['model.json'],
                                policy_path=str((run / 'policy.json').relative_to(ROOT)), policy_sha256=sealed['files']['policy.json']))
     reg = read(path)
@@ -64,10 +71,12 @@ def forecast_rain(today, last_target, normal):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--test-dir'); a = ap.parse_args()
+    global V
+    ap = argparse.ArgumentParser(); ap.add_argument('--test-dir'); ap.add_argument('--version', choices=sorted(VERSIONS), default='v1'); a = ap.parse_args()
+    V = VERSIONS[a.version]
     base = Path(a.test_dir) if a.test_dir else None
-    p.D = base / 'data' if base else ROOT / 'data/drought-prospective'
-    p.O = base / 'outputs' if base else ROOT / 'outputs/drought-prospective'
+    p.D = base / 'data' if base else ROOT / V['data']
+    p.O = base / 'outputs' if base else ROOT / V['out']
     p.D.mkdir(parents=True, exist_ok=True); p.O.mkdir(parents=True, exist_ok=True)
     c = p.db(); p.verify(c); reg_path, reg = registry(); models = read(ROOT / reg['model_path'])
     if not a.test_dir: merge_live_soil()
@@ -85,7 +94,7 @@ def main():
             days = [str(today + timedelta(days=j)) for j in range((t - today).days + 1)]
             ahead = sum(rain[d] if rain.get(d) is not None else normal for d in days)
             ahead_src.append('%d of %d days NOAA NBM, rest normal' % (sum(rain.get(d) is not None for d in days), len(days)))
-            x = drivers(A, unit, m0, issue, str(t), ahead)
+            x = drivers(A, unit, m0, issue, str(t), ahead, vegdri=V['vegdri'])
             if x is None: missing.append(dict(id=unit, reason='No current Drought Monitor map')); break
             mm = models[str(lead)]['model']; y = finish(maps[m0] / 100, predict(mm, x[None, :])[0], mm.get('deadband', 0.0))
             w_ = float(prob(models[str(lead)]['worsen'], x[None, :])[0]); i_ = float(prob(models[str(lead)]['improve'], x[None, :])[0])
@@ -99,11 +108,11 @@ def main():
     folder = p.D / 'snapshots' / p.stamp(); folder.mkdir(parents=True)
     snap = dict(captured_at=p.utc().isoformat(), values={}, grids={}, errors=[], nbm_cycle=cycle, rain_forecast_in=rain,
                 inputs={n: p.digest(ROOT / 'data' / n) for n in ('drought/usdm-weekly.csv', 'drought/palmer-divisions.csv', 'drought/soil-moisture-daily.csv',
-                                                                  'fire-danger/history.csv', 'water-temp/daily.csv')})
+                                                                  'fire-danger/history.csv', 'water-temp/daily.csv') + (('drought/vegdri-weekly.csv',) if V['vegdri'] else ())})
     snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
     code = folder / 'drought-runner.py'
     with code.open('xb') as f: f.write(Path(__file__).read_bytes())
-    p.seal(c, KIND, rows, missing, snapshot, snap, reg_path, model_version='drought-v1',
+    p.seal(c, KIND, rows, missing, snapshot, snap, reg_path, model_version=V['version'],
            extra_sources=[dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code)), dict(path=reg['model_path'], sha256=reg['model_sha256'])])
     seen = read(ROOT / 'data/drought/usdm-first-seen.json')
     for unit, maps in A['usdm'].items():
@@ -113,8 +122,8 @@ def main():
     c.commit(); new = p.score(c)
     issued = c.execute('SELECT path FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=?', (issue, KIND)).fetchone()
     save(p.O / 'last-run.json', dict(completed_at=p.utc().isoformat(), issue_day=issue, targets=[str(t) for t in targets], sealed_today=issued[0] if issued else None,
-                                     available_forecasts=len(rows), withheld=missing, new_comparisons=new, nbm_cycle=cycle, model_version='drought-v1'))
-    log('Drought forecast: %d areas for maps %s; %d new comparisons.' % (len(rows), ', '.join(str(t) for t in targets), new))
+                                     available_forecasts=len(rows), withheld=missing, new_comparisons=new, nbm_cycle=cycle, model_version=V['version']))
+    log('Drought forecast (%s): %d areas for maps %s; %d new comparisons.' % (V['version'], len(rows), ', '.join(str(t) for t in targets), new))
     for r in rows:
         if r['id'] == 'CT' or len(rows) <= 3: print(r['id'], r['current_class'], '->', r['dominant_class'], 'chance worse', r['chance_worse'], 'better', r['chance_better'], r['rain_ahead_source'])
 

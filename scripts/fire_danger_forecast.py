@@ -103,12 +103,12 @@ def train():
 
 # ---------------- live forecast ----------------
 
-def nbm_weather(points):
+def nbm_weather(points, not_after=None):
     """1 PM (18 UTC) temperature/dew point/wind and 24 h rain ending then, per airport, from the latest NBM cycle."""
     import requests, rasterio
     from rasterio.warp import transform
     from fetch_noaa_precip import locate, BASE, USER
-    day, cycle, files, _ = locate(); c0 = datetime.strptime(day + cycle, '%Y%m%d%H').replace(tzinfo=timezone.utc)
+    day, cycle, files, _ = locate(not_after=not_after); c0 = datetime.strptime(day + cycle, '%Y%m%d%H').replace(tzinfo=timezone.utc)
     hours = sorted({int(re.search(r'f(\d{3})', f).group(1)) for f in files if 1 <= int(re.search(r'f(\d{3})', f).group(1)) <= 264})
     folder = FD / 'nbm' / (day + cycle + 'z'); folder.mkdir(parents=True, exist_ok=True); grids = {}
     for h in hours:
@@ -158,7 +158,10 @@ def forecast():
     if date.fromisoformat(last['date']) < today - timedelta(days=2): raise ValueError('Fire weather history is stale; update it first.')
     probs = np.load(sorted((OUT / 'runs').glob('*/transitions.npy'))[-1])
     bui = {s: float(last[s + '_bui']) for s in STATIONS if last.get(s + '_bui') not in ('', None)}
-    c0, wx, qpf = nbm_weather({s: AIRPORTS[s] for s in bui})
+    # Today's Build Up Index step needs NBM weather at 1 PM today: a catch-up run started after about 1 PM uses the
+    # newest cycle issued at least an hour before then, instead of one that starts after it.
+    one_pm = datetime.combine(today, datetime.min.time(), LOCAL).replace(hour=13).astimezone(timezone.utc)
+    c0, wx, qpf = nbm_weather({s: AIRPORTS[s] for s in bui}, not_after=one_pm - timedelta(hours=1))
     out = []; last_class = None
     if date.fromisoformat(last['date']) != today - timedelta(days=1):
         raise ValueError('Rebuilt history must end yesterday so today can be stepped with NBM weather.')

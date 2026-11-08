@@ -2,7 +2,8 @@
 import unittest
 import numpy as np
 from train_drought import finish, dsci, category, fit_logistic, prob, auc, events
-from drought_features import palmer_on, rain_between
+from drought_features import palmer_on, rain_between, vegdri_on, vegdri_drivers
+from fetch_vegdri import to_index
 
 
 class DroughtTests(unittest.TestCase):
@@ -32,6 +33,17 @@ class DroughtTests(unittest.TestCase):
         rain = {'2026-01-0%d' % d: 0.1 for d in range(1, 9)}
         self.assertAlmostEqual(rain_between(rain, '2026-01-01', '2026-01-08'), 0.8)
         self.assertIsNone(rain_between({'2026-01-01': 1.0}, '2026-01-01', '2026-01-08'))
+
+    def test_vegdri_decoding(self):
+        dn = np.array([128, 112, 160, 252, 253, 254, 255]); v = to_index(dn, np.ones(7, bool))
+        np.testing.assert_allclose(v[:4], [0, -1, 2, 7.75]); self.assertTrue(np.isnan(v[4:]).all())    # water, out of season, other land
+
+    def test_vegdri_only_used_once_available_and_recent(self):
+        s = [('2026-10-28', -1.0, .5), ('2026-11-04', -1.5, .7)]
+        self.assertEqual(vegdri_on(s, '2026-11-03')[1], -1.0)              # next week not out until Nov 4
+        self.assertEqual(vegdri_on(s, '2026-11-04')[1], -1.5)
+        self.assertIsNone(vegdri_on(s, '2026-12-20'))                       # stale (winter): treated as missing
+        self.assertEqual(vegdri_drivers(dict(vegdri={}), 'CT', '2026-11-05'), [0.0, 0.0, 0.0, 1.0])
 
 
 if __name__ == '__main__':

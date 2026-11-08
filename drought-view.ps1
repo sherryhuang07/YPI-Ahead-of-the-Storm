@@ -42,6 +42,21 @@ if (Test-Path -LiteralPath $test) {
         }
     }
 }
+$v2Path = Join-Path $root 'outputs/drought-v2-prospective/last-run.json'
+if (Test-Path -LiteralPath $v2Path) {
+    $v2 = Get-Content -LiteralPath $v2Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($v2.sealed_today) {
+        $ct = (Get-Content -LiteralPath (Join-Path $root $v2.sealed_today) -Raw -Encoding UTF8 | ConvertFrom-Json).forecasts | Where-Object { $_.id -eq 'CT' }
+        Write-Host ''
+        Write-Host 'Version 2 (adds USGS VegDRI satellite plant stress), statewide:' -ForegroundColor Cyan
+        if ($ct) { Write-Host ('  {0} -> {1} / {2}; chance worse {3:P0} / {4:P0}' -f $ct.current_class, $ct.dominant_class[0], $ct.dominant_class[1], $ct.chance_worse[0], $ct.chance_worse[1]) }
+    }
+}
+$veg = Join-Path $root 'data/drought/vegdri-weekly.csv'
+if (Test-Path -LiteralPath $veg) {
+    $last = Import-Csv -LiteralPath $veg | Where-Object { $_.unit -eq 'CT' -and $_.mean -ne '' } | Sort-Object week_end | Select-Object -Last 1
+    if ($last) { Write-Host ('Satellite plant stress (VegDRI), week ending {0}: statewide index {1:N2}; {2:N0}% of vegetated land below -1 (stressed).' -f $last.week_end, [double]$last.mean, [double]$last.pct_below_minus1) }
+}
 Write-Host ''
 Write-Host 'Each farm takes its planning region''s forecast; local conditions can differ (Drought Monitor maps are broad-scale).' -ForegroundColor Yellow
 Write-Host 'Daily tests and the learning version: Farmer View option 11.'

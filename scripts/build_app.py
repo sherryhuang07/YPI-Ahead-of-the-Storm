@@ -50,9 +50,25 @@ def regions_svg():
     return paths
 
 
+def calibration_loss(trained):
+    """Mean 2015-2018 calibration log loss (worsening and improving, all leads) of a trained drought version."""
+    t = j(trained + '/latest.json'); m = t and j('%s/runs/%s/model.json' % (trained, t['run']))
+    return float(np.mean([v[e]['calibration_log_loss'] for v in m.values() for e in ('worsen', 'improve')])) if m else None
+
+
+def drought_version():
+    """Rule fixed before v2 was trained: v2 (with VegDRI) leads only if its calibration log loss is lower than v1's
+    and it has sealed a forecast; otherwise v1."""
+    v1, v2 = calibration_loss('outputs/drought'), calibration_loss('outputs/drought-v2')
+    if v1 is not None and v2 is not None and v2 < v1 and (j('outputs/drought-v2-prospective/last-run.json') or {}).get('sealed_today'):
+        return 'v2', 'outputs/drought-v2-prospective/last-run.json', 'outputs/drought-v2/latest.json'
+    return 'v1', 'outputs/drought-prospective/last-run.json', 'outputs/drought/latest.json'
+
+
 def drought():
-    issue, run = issue_of('outputs/drought-prospective/last-run.json')
-    test = j('outputs/drought/latest.json') or {}
+    version, last_run, trained = drought_version()
+    issue, run = issue_of(last_run)
+    test = j(trained) or {}
     farms = (j('data/drought/farm-regions.json') or {}).get('by_region', {})
     areas = {}
     for f in (issue or {}).get('forecasts', []):
@@ -60,7 +76,13 @@ def drought():
                               dates=f['dates'], classes=f['dominant_class'], worse=f['chance_worse'], better=f['chance_better'],
                               cum=f['cumulative_percent_d0_to_d4'], farms=farms.get(f['id'], 0))
     probs = {k: v['probabilities'] for k, v in test.get('by_lead_weeks', {}).items()}
-    return dict(issued=(issue or {}).get('issued_at'), areas=areas, test=dict(
+    veg = {}
+    if (ROOT / 'data/drought/vegdri-weekly.csv').exists():
+        import csv
+        for r in csv.DictReader((ROOT / 'data/drought/vegdri-weekly.csv').open(encoding='utf-8')):
+            if r['mean'] not in ('', 'None') and r['week_end'] >= veg.get(r['unit'], {}).get('week_end', ''):
+                veg[r['unit']] = dict(week_end=r['week_end'], mean=round(float(r['mean']), 2), stressed=round(float(r['pct_below_minus1'])))
+    return dict(issued=(issue or {}).get('issued_at'), version=version, vegdri=veg, areas=areas, test=dict(
         auc_worse=[probs.get(k, {}).get('worsen_normal_rain', {}).get('auc') for k in ('1', '2', '3')],
         auc_better=[probs.get(k, {}).get('improve_normal_rain', {}).get('auc') for k in ('1', '2', '3')],
         class_right=[probs.get(k, {}).get('class_with_step_rule') for k in ('1', '2', '3')],
@@ -164,6 +186,7 @@ def accuracy():
     add('Fire danger', 'fire.html', 'outputs/fire-danger-prospective/scoreboard.json', 'fire-danger', 'classes')
     add('Coastal water temperature', 'coast.html', 'outputs/water-temp-prospective/scoreboard.json', 'water-temp', '°F', 1.8, '%.1f')
     add('Drought', 'drought.html', 'outputs/drought-prospective/scoreboard.json', 'drought', 'index points', fmt='%.1f')
+    add('Drought, version 2 (with satellite plant stress)', 'drought.html', 'outputs/drought-v2-prospective/scoreboard.json', 'drought', 'index points', fmt='%.1f')
     return out
 
 
@@ -317,9 +340,10 @@ sel.onchange=()=>show(sel.value);show(sel.value);"""))
 <h1>Drought outlook</h1><p class="lead">The U.S. Drought Monitor publishes a drought map every Thursday (for that Tuesday). We forecast the next two maps for Connecticut and its 9 regions.</p>
 <div class="card tablewrap"><table id="t"></table></div>
 <h2>What the drought levels mean</h2><div class="grid g3" id="levels"></div>
+<h2>Plant stress seen from space</h2><div class="card" id="veg"></div>
 <h2>How sure are we?</h2><div class="card" id="sure"></div>
 <details><summary>What goes into this forecast</summary><p>Rain (recent and NOAA's forecast for the coming days), river flows at 109 gauges, groundwater wells, soil moisture, the fire danger "build up" of dry fuels, coastal water temperature, the Palmer Drought Severity Index, and the current Drought Monitor map and how it has been changing. Each is compared with what's normal for the time of year.</p>
-<p>Drought maps are drawn by experts and change slowly, so the forecast focuses on the <b>chance</b> that your region's drought level changes.</p></details>""" + '<h2>Other parts of the forecast</h2>' + tiles('drought'),
+<p>Drought maps are drawn by experts and change slowly, so the forecast focuses on the <b>chance</b> that your region's drought level changes.</p><p id="vernote" class="small muted"></p></details>""" + '<h2>Other parts of the forecast</h2>' + tiles('drought'),
         D, r"""
 const A=DATA.areas,ids=Object.keys(A).sort((a,b)=>a=='CT'?-1:b=='CT'?1:A[a].name.localeCompare(A[b].name)),d=A.CT.dates;
 $('#t').innerHTML=`<thead><tr><th>Area</th><th>Now</th><th>${fmtDate(d[0])}</th><th>${fmtDate(d[1])}</th><th class="num">Farms</th></tr></thead><tbody>`+ids.map(i=>{const a=A[i];
@@ -329,7 +353,11 @@ const t=DATA.test;$('#sure').innerHTML=`<p>We tested the forecast on 2019–2026
 <li>When drought really got worse, our chance was higher than on other weeks <b>${pct(t.auc_worse[0])}</b> of the time one week ahead and <b>${pct(t.auc_worse[1])}</b> two weeks ahead.</li>
 <li>When drought really eased, the same was true <b>${pct(t.auc_better[0])}</b> and <b>${pct(t.auc_better[1])}</b> of the time.</li>
 <li>The drought level itself was right <b>${pct(t.class_right[0])}</b> of the time one week ahead (assuming no change would be right ${pct(t.unchanged_right[0])}).</li></ul>
-<p class="small muted">This means the forecast is good at warning which weeks are likely to change, but it can't promise exactly what next week's map will say.</p>`;"""))
+<p class="small muted">This means the forecast is good at warning which weeks are likely to change, but it can't promise exactly what next week's map will say.</p>`;
+const V=DATA.vegdri,vw=v=>v<=-4?'Extreme stress':v<=-3?'Severe stress':v<=-2?'Moderate stress':v<=-1?'Early stress':v<1?'Near normal':'Unusually moist';
+$('#veg').innerHTML=V.CT?`<p>USGS's Vegetation Drought Response Index (VegDRI) compares how green crops, pasture and forest look from satellites with what's normal, together with recent weather. Week ending ${fmtDate(V.CT.week_end)}.</p><div class="tablewrap"><table><thead><tr><th>Area</th><th>Plants</th><th class="num">Land showing stress</th></tr></thead><tbody>`+
+ ids.filter(i=>V[i]).map(i=>`<tr><td>${A[i].name}</td><td>${vw(V[i].mean)}</td><td class="num">${V[i].stressed}%</td></tr>`).join('')+'</tbody></table></div>':'<p class="muted">Satellite plant data not downloaded yet.</p>';
+$('#vernote').textContent=DATA.version=='v2'?'This forecast also uses the satellite plant stress index above (version 2).':'Satellite plant stress is shown for reference. A version of the forecast that uses it is being tested; it replaces this one only if it scores better on 2015–2018 checks.';"""))
 
     # ---------------- rain
     write('rain', page('rain', 'Rain', """

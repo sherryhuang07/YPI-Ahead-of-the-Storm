@@ -24,6 +24,14 @@ POLICY = dict(version='drought-v1', train_end='2014-12-31', calibration=['2015-0
               leads_weeks=[1, 2, 3], penalties=[0.1, 1.0, 10.0, 100.0], deadbands=[0, 5, 10, 15, 20, 30, 40, 60], issue_offset_days=2,
               target='U.S. Drought Monitor cumulative percent of area D0+..D4+, statewide and 9 planning regions',
               note='Chosen before scoring the test years. Also: probability of the dominant class worsening or improving by the target map (logistic, penalty chosen on calibration log loss). A predicted change smaller than the deadband (DSCI points, chosen on calibration years) is snapped back to the current map. VegDRI not yet included (USGS access pending).')
+# drought-v2: identical method, splits and choices, plus the area's USGS VegDRI (2009-) as inputs.
+# Decided before any v2 result: v2 becomes the app's main drought forecast only if its calibration
+# (2015-2018) log loss for worsening and for improving, averaged over the leads, is lower than v1's.
+POLICY_V2 = dict(POLICY, version='drought-v2', vegdri=True,
+                 note=POLICY['note'].replace('VegDRI not yet included (USGS access pending).',
+                                             'Adds USGS VegDRI (weekly, 2009-; available 2 days after each Monday-Sunday week; missing before April 2009 and out of season). '
+                                             'Main-product rule fixed in advance: v2 replaces v1 in the app only if its mean calibration log loss (worsening and improving, all leads) is lower.'))
+OUTS = {'drought-v1': OUT, 'drought-v2': ROOT / 'outputs/drought-v2'}
 LEVELS = ['None', 'D0', 'D1', 'D2', 'D3', 'D4']
 
 
@@ -84,7 +92,7 @@ def events(s):
     return float(c1 > c0), float(c1 < c0)
 
 
-def samples(a, rain_mode='observed'):
+def samples(a, rain_mode='observed', vegdri=False):
     out = []; normal = normal_rain_per_day(a['rain'])
     for unit, maps in a['usdm'].items():
         dates = sorted(maps)
@@ -95,15 +103,18 @@ def samples(a, rain_mode='observed'):
                 target = dates[i + k]
                 if (date.fromisoformat(target) - date.fromisoformat(m0)).days != 7 * k: continue
                 ahead = rain_between(a['rain'], issue, target) if rain_mode == 'observed' else normal * ((date.fromisoformat(target) - date.fromisoformat(issue)).days + 1)
-                x = drivers(a, unit, m0, issue, target, ahead)
+                x = drivers(a, unit, m0, issue, target, ahead, vegdri=vegdri)
                 if x is None: continue
                 out.append(dict(unit=unit, map=m0, issue=issue, target=target, lead=k, x=x, cur=maps[m0] / 100, y=maps[target] / 100))
     return out
 
 
 def main():
-    a = load_all(); S = samples(a); Sn = {(s['unit'], s['map'], s['lead']): s for s in samples(a, 'normal')}
-    p = POLICY; models = {}
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('--version', choices=['v1', 'v2'], default='v1'); args = ap.parse_args()
+    p = POLICY if args.version == 'v1' else POLICY_V2; OUT = OUTS[p['version']]; veg = bool(p.get('vegdri'))
+    a = load_all(); S = samples(a, vegdri=veg); Sn = {(s['unit'], s['map'], s['lead']): s for s in samples(a, 'normal', vegdri=veg)}
+    models = {}
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'); run = OUT / 'runs' / stamp; run.mkdir(parents=True)
     sealed = []
     for k in p['leads_weeks']:
@@ -133,7 +144,7 @@ def main():
                                pred_observed_rain=finish(s['cur'], d, m['deadband']).tolist(), pred_normal_rain=finish(s['cur'], dn, m['deadband']).tolist(),
                                p_worsen=float(prob(mk['worsen'], s['x'][None, :])[0]), p_improve=float(prob(mk['improve'], s['x'][None, :])[0]),
                                p_worsen_normal_rain=float(prob(mk['worsen'], xn[None, :])[0]), p_improve_normal_rain=float(prob(mk['improve'], xn[None, :])[0])))
-    for name, obj in (('sealed-test-predictions.json', sealed), ('model.json', models), ('policy.json', POLICY)):
+    for name, obj in (('sealed-test-predictions.json', sealed), ('model.json', models), ('policy.json', p)):
         with (run / name).open('x', encoding='utf-8') as f: json.dump(obj, f)
     files = {n: hashlib.sha256((run / n).read_bytes()).hexdigest() for n in ('sealed-test-predictions.json', 'model.json', 'policy.json')}
     save(run / 'manifest.json', dict(created_at=datetime.now(timezone.utc).isoformat(), files=files, samples=len(S)))
@@ -168,12 +179,12 @@ def main():
         prob_scores['class_with_step_rule'] = float(np.mean(res2))
         score[str(k)] = dict(cases=len(rows), category_changes=len(res['changed']), probabilities=prob_scores,
                              **{n: float(np.mean(v)) for n, v in res.items() if n != 'changed'})
-    report = dict(status='Held-out 2019-2026 test of the combined drought model.', policy=POLICY, by_lead_weeks=score,
+    report = dict(status='Held-out 2019-2026 test of the combined drought model (%s).' % p['version'], policy=p, by_lead_weeks=score,
                   note='DSCI = Drought Severity and Coverage Index (0-500). Category = most severe class covering half the area. '
                        'Statewide and 9 regions pooled; regions are correlated. Drought Monitor maps involve expert judgment.')
     with (run / 'scoreboard.json').open('x', encoding='utf-8') as f: json.dump(report, f, indent=1)
     save(OUT / 'latest.json', dict(run=stamp, **report))
-    log('Drought model: trained and tested (run %s).' % stamp)
+    log('Drought model %s: trained and tested (run %s).' % (p['version'], stamp))
     for k, s in score.items():
         pr = s['probabilities']
         print('%s week(s): chance of WORSENING: skill %.2f (AUC %.2f), %d events; IMPROVING: skill %.2f (AUC %.2f), %d events; class with step rule %.0f%%  [perfect rain]' % (

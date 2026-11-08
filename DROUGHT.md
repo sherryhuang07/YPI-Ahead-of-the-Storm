@@ -14,7 +14,7 @@ The app's final drought model. It forecasts the next two weekly **U.S. Drought M
 | Root-zone soil moisture | NLDAS-2 (USGS archive to 2020; NASA single 17 UTC hour per day 2021-2026; live inputs after) | daily 2000- | statewide departure, 6-day publication lag |
 | Fire danger Build Up Index | 1964 NFDRS rebuild | daily 1997- | statewide median |
 | Coastal water temperature | NOAA NDBC | daily 2004- | mean station departure |
-| VegDRI | USGS EarthExplorer | weekly 2009- | **not yet included**: waiting for USGS account access |
+| VegDRI | USGS EarthExplorer M2M (`scripts/fetch_vegdri.py`, `vegdri-update.ps1`) | weekly 1 km maps, Apr 2009- | **drought-v2 only**: each region's mean index, share of vegetated land below -1, 4-week change |
 | Reservoirs | CT DPH reports | 11 snapshots | not used: too sparse to train on |
 
 Every input becomes a departure from normal for the time of year, using climatology from 2000-2014 only. Missing values become "normal" with a missing flag; nothing is filled with a guessed dry or wet value. The 2021-2026 soil series uses one NASA hour per day: in a 2020 check, a single 17 UTC hour differed from the 24-hour mean by 0.0004 m3/m3 on average.
@@ -44,9 +44,15 @@ AUC is the chance that a week whose class really changed got a higher forecast p
 
 The night run (`daily-forecasts.ps1 -Part night`) runs the drought step after all other inputs are refreshed: `fetch_drought_data.py --recent` (Palmer and this year's maps; first-download times recorded in `data/drought/usdm-first-seen.json`), then `scripts/drought_daily.py`. It seals the next two Tuesday maps after today in its own append-only ledger (`data/drought-prospective`, `outputs/drought-prospective`): per area the Drought Severity and Coverage Index (DSCI, 0-500; the scored value), percentages, chance worse and better, and the class. Forecasts are scored only against map values first downloaded after they were issued, beside "unchanged map". A learning version (`learning_daily.py`, model `drought`) corrects the DSCI from scored comparisons, like the other models.
 
-## VegDRI: what's needed
+## Version 2: adding VegDRI
 
-Run `Connect USGS EarthExplorer.cmd`. You need a free USGS account (https://ers.cr.usgs.gov/register), approval for machine-to-machine access (request "Access to EE's M2M API" in your USGS profile), and an application token (https://ers.cr.usgs.gov/password/appgenerate). The window checks the sign-in, saves it with Windows encryption, and lists the VegDRI datasets visible to the account. VegDRI will then be added as a separately versioned model (`drought-v2`), so the sealed `drought-v1` record stays comparable.
+USGS's Vegetation Drought Response Index blends satellite greenness (NDVI) with climate drought indices and land cover. It is on the Palmer scale: below -1 is vegetation stress, -2 moderate, -3 severe, -4 extreme. `vegdri-update.ps1` signs in with the USGS sign-in saved by `Connect USGS EarthExplorer.cmd` (Windows-encrypted, never committed). It downloads each weekly national file (about 54 MB), clips it to the 9 planning regions, and deletes it. Only `data/drought/vegdri-weekly.csv` is kept, with the mean, % below -1 and % below -2 per region and statewide.
+
+Decoding: the 8-bit pixel value DN maps to index = (DN - 128) / 16. DN 253 is water, 254 out of season, 255 other land cover; these have no value. A Monday-Sunday week is treated as available 2 days after it ends (USGS produces it the next morning). It is missing before April 2009 and when it is more than 3 weeks old, e.g. out of season; missing values become 0 with a missing flag.
+
+`drought-v2` is drought-v1 with three VegDRI inputs added. It keeps the same method, splits (fit to 2014, choose on 2015-2018, test 2019-2026) and choices: `train_drought.py --version v2` writes to `outputs/drought-v2`. Its daily forecast `drought_daily.py --version v2` has its own sealed ledger (`data/drought-v2-prospective`, `outputs/drought-v2-prospective`) and learning version (`drought-v2`), so the v1 record stays comparable.
+
+**Rule fixed before v2 was trained:** the app shows v2 instead of v1 only if v2's mean 2015-2018 calibration log loss (worsening and improving, all leads) is lower than v1's. The 2019-2026 test results are reported either way, but they don't decide the switch.
 
 ## Limits
 

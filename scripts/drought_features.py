@@ -16,6 +16,11 @@ fitted on 2000-2014 only, so training-period statistics never contain test years
   usdm d0..d4      the region's (or state's) current Drought Monitor cumulative percent of area
   change_4w        how much that area's map changed over the previous 4 weeks (momentum)
   season           sin/cos of day of year
+  vegdri (v2 only) the area's own USGS VegDRI: mean index, share of vegetated land below -1, and the
+                   change in the mean over the previous 4 weeks. VegDRI is already a standardized
+                   drought index (Palmer scale), so it is used as is. A week (Monday-Sunday) is treated
+                   as available 2 days after it ends (USGS produces it the next morning). Before
+                   April 2009 and in winter (out of season) it is missing: 0 with a missing flag.
 Missing values become 0 (normal) with a 'missing' flag, never a guessed dry or wet value.
 """
 import csv
@@ -145,9 +150,41 @@ def load_usdm():
     return by
 
 
+def load_vegdri():
+    """unit -> sorted list of (available_day, mean, share below -1) from data/drought/vegdri-weekly.csv."""
+    path = D / 'drought/vegdri-weekly.csv'; by = defaultdict(list)
+    if not path.exists(): return {}
+    for r in csv.DictReader(open(path, encoding='utf-8')):
+        if r['mean'] in ('', 'None'): continue
+        avail = str(date.fromisoformat(r['week_end']) + timedelta(days=VEGDRI_LAG_DAYS))
+        by[r['unit']].append((avail, float(r['mean']), float(r['pct_below_minus1']) / 100))
+    return {u: sorted(v) for u, v in by.items()}
+
+
+VEGDRI_LAG_DAYS = 2
+
+
+def vegdri_on(series, day, max_age_days=21):
+    """Latest VegDRI week available by `day` (and no older than 3 weeks), or None."""
+    best = None
+    for avail, mean, share in series or []:
+        if avail > day: break
+        best = (avail, mean, share)
+    if best is None or (date.fromisoformat(day) - date.fromisoformat(best[0])).days > max_age_days: return None
+    return best
+
+
+def vegdri_drivers(a, unit, issue):
+    s = a.get('vegdri', {}).get(unit)
+    now = vegdri_on(s, issue)
+    if now is None: return [0.0, 0.0, 0.0, 1.0]
+    then = vegdri_on(s, str(date.fromisoformat(now[0]) - timedelta(days=28)), 10)
+    return [now[1], now[2], 0.0 if then is None else now[1] - then[1], 0.0]
+
+
 def load_all():
     rain = load_rain()
-    return dict(rain=rain, rain_z={w: zscore_by_month(rolling_sum(rain, w))[0] for w in (30, 90, 180)}, flow=load_flow(), wells=load_wells(),
+    return dict(vegdri=load_vegdri(), rain=rain, rain_z={w: zscore_by_month(rolling_sum(rain, w))[0] for w in (30, 90, 180)}, flow=load_flow(), wells=load_wells(),
                 soil=load_soil(), bui=load_bui(), water=load_water(), palmer=load_palmer(), usdm=load_usdm())
 
 
@@ -168,8 +205,10 @@ NAMES = ['rain_30', 'rain_90', 'rain_180', 'rain_since_map', 'rain_ahead', 'flow
          'd0', 'd1', 'd2', 'd3', 'd4', 'change_4w', 'sin', 'cos', 'lead']
 
 
-def drivers(a, unit, map_date, issue, target, rain_ahead):
-    """Feature vector (with missing flags) for one unit, last map `map_date`, issue day and target map."""
+def drivers(a, unit, map_date, issue, target, rain_ahead, vegdri=False):
+    """Feature vector (with missing flags) for one unit, last map `map_date`, issue day and target map.
+    vegdri=True (drought-v2) appends VegDRI mean, share below -1, 4-week change and its missing flag;
+    with vegdri=False the vector is exactly drought-v1's."""
     before = str(date.fromisoformat(issue) - timedelta(days=1)); soil_day = str(date.fromisoformat(issue) - timedelta(days=6))
     def last(series, day, back=10):
         d = date.fromisoformat(day)
@@ -194,4 +233,4 @@ def drivers(a, unit, map_date, issue, target, rain_ahead):
     change = 0.0 if prev is None else float(np.sum(cur - prev) / 100)      # DSCI change over the last 4 weeks (x100)
     x = [0.0 if v is None else float(v) for v in vals] + list(cur / 100) + [change, np.sin(doy), np.cos(doy), lead]
     flags = [1.0 if v is None else 0.0 for v in vals]
-    return np.array(x + flags)
+    return np.array(x + flags + (vegdri_drivers(a, unit, issue) if vegdri else []))

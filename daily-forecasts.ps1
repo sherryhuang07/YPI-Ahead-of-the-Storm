@@ -79,8 +79,14 @@ $nightJobs = @(
     @{ name = 'Combined drought forecast'; run = {
         & $python (Join-Path $root 'scripts\fetch_drought_data.py') --recent
         if ($LASTEXITCODE -eq 0) { & $python (Join-Path $root 'scripts\drought_daily.py') } } },
+    # drought-v2 = the same forecast plus USGS VegDRI (vegetation stress), in its own ledger. Downloads the
+    # newest VegDRI week with the saved USGS sign-in first; if USGS is unreachable, v2 still runs on the last week it has.
+    @{ name = 'Combined drought forecast v2 (with VegDRI)'; run = {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'vegdri-update.ps1') -Recent
+        if ($LASTEXITCODE -ne 0) { Write-Host 'VegDRI download failed; using the weeks already saved.' -ForegroundColor Yellow }
+        & $python (Join-Path $root 'scripts\drought_daily.py') --version v2 } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature, drought'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp drought } }
+    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature, drought v1 and v2'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp drought drought-v2 } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
