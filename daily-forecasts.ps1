@@ -60,6 +60,8 @@ $prospective = Join-Path $root 'scripts\prospective_daily.py'
 $learning = Join-Path $root 'scripts\learning_daily.py'
 $nightJobs = @(
     @{ name = 'Precipitation and groundwater wells (+ NOAA NBM)'; run = { & $python $prospective --only precipitation groundwater } },
+    # The NOAA rain forecast the app shows, sealed in its own ledger on PRISM's 7 AM-7 AM day (needs the NBM issue above).
+    @{ name = 'NOAA rain forecast test'; run = { & $python (Join-Path $root 'scripts\noaa_precip_daily.py') } },
     @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } },
     # Fire danger: archive DEEP's latest rating (the target), refresh recent airport weather,
     # rebuild the index history, then seal the 14-day forecast. Each step stops the chain if it fails.
@@ -86,7 +88,7 @@ $nightJobs = @(
         if ($LASTEXITCODE -ne 0) { Write-Host 'VegDRI download failed; using the weeks already saved.' -ForegroundColor Yellow }
         & $python (Join-Path $root 'scripts\drought_daily.py') --version v2 } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: precipitation, groundwater, root-zone, fire danger, water temperature, drought v1 and v2'; run = { & $python $learning --models precipitation groundwater root-zone fire-danger water-temp drought drought-v2 } }
+    @{ name = 'Learning versions: rain (history and NOAA), groundwater, root-zone, fire danger, water temperature, drought v1 and v2'; run = { & $python $learning --models precipitation noaa-rain groundwater root-zone fire-danger water-temp drought drought-v2 } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },

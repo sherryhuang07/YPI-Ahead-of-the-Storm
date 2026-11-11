@@ -127,6 +127,12 @@ def main():
     rows, missing = make_rows(models, policy, values, today)
     p.seal(c, KIND, rows, missing, snapshot, snap, reg_path, model_version='root-zone-v1', extra_sources=extra)
     p.record_observations(c, snap, snapshot, {}); new = p.score(c)
+    # Keep the trained model's status file current (it was written before live inputs existed).
+    lp = ROOT / 'outputs/root-zone/latest.json'; latest = read(lp)
+    issued = c.execute('SELECT path FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=?', (str(today), KIND)).fetchone()
+    latest.update(status='Historical model trained; live forecast sealed daily in outputs/root-zone-prospective.',
+                  live_last_issue_day=str(today), live_last_issue=issued[0] if issued else None, live_watersheds=len(rows))
+    if not args.test_dir: save(lp, latest)
     board = read(p.O / 'scoreboard.json'); board['interval'] = interval_coverage(c)
     board['note'] = ('Targets are the first captured NLDAS-2 watershed values (modeled moisture, not sensors). '
                      'Overlapping 14-day windows and correlated watersheds are not independent tests.')

@@ -30,7 +30,10 @@ import prospective_daily as p
 from statewide_common import ROOT, read, save, log
 
 MODELS = {
-    'precipitation': dict(base='data/prospective', kind='precipitation', transform='identity', scale=5.0, low=0.0, high=None),
+    # Rain: one storm day can miss by 60+ mm and swamp every other lesson, so each lesson's error is capped at
+    # +/-1 scale unit (5 mm) before it updates the weights (learning-v1.1, from 2026-11-11; relearned from all scored comparisons).
+    'precipitation': dict(base='data/prospective', kind='precipitation', transform='identity', scale=5.0, low=0.0, high=None, error_cap=1.0),
+    'noaa-rain': dict(base='data/noaa-rain-prospective', kind='precipitation', transform='identity', scale=5.0, low=0.0, high=None, error_cap=1.0),
     'groundwater': dict(base='data/prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'streamflow': dict(base='data/prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'regional-streamflow': dict(base='data/regional-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
@@ -72,10 +75,12 @@ class Weights:
         self.P = np.concatenate([self.P, np.tile(np.diag(POLICY['prior_variance']), (m, LEADS, 1, 1))])
         self.n = np.concatenate([self.n, np.zeros((m, LEADS), int)])
 
-    def update(self, loc, lead, pred_t, obs_t, scale):
-        """One RLS step with the original prediction and its observation (working units)."""
+    def update(self, loc, lead, pred_t, obs_t, scale, cap=None):
+        """One RLS step with the original prediction and its observation (working units).
+        cap: largest error one lesson may teach, in scale units (None = no cap)."""
         i = self.index[loc]; L = lead - 1; lam = POLICY['forgetting']
         x = np.array([1.0, (pred_t - self.ref[i]) / scale]); e = (obs_t - pred_t) / scale
+        if cap is not None: e = float(np.clip(e, -cap, cap))
         P = self.P[i, L]; Px = P @ x; k = Px / (lam + x @ Px)
         self.w[i, L] = self.w[i, L] + k * (e - x @ self.w[i, L])
         self.P[i, L] = (P - np.outer(k, Px)) / lam; self.n[i, L] += 1
@@ -100,7 +105,7 @@ def train(weights, base, kind, cfg):
     for _, loc, _, pred, _ in rows: refs.setdefault(loc, float(fwd(pred, cfg['transform'])))
     weights.ensure(refs)
     for rowid, loc, lead, pred, obs in rows:
-        weights.update(loc, int(lead), float(fwd(pred, cfg['transform'])), float(fwd(obs, cfg['transform'])), cfg['scale'])
+        weights.update(loc, int(lead), float(fwd(pred, cfg['transform'])), float(fwd(obs, cfg['transform'])), cfg['scale'], cfg.get('error_cap'))
         weights.mark = max(weights.mark, rowid)
     return len(rows)
 
@@ -116,8 +121,12 @@ def learned_rows(record, weights, cfg):
             out.append(float(y))
         rows.append(dict(id=r['id'], dates=r['dates'], prediction=out, baseline=frozen.tolist(),
                          source_last_day=r.get('source_last_day'), units=r.get('units'),
-                         method='Original forecast corrected by weights learned from earlier scored comparisons (learning-v1)'))
+                         method='Original forecast corrected by weights learned from earlier scored comparisons (%s)' % version(cfg)))
     return rows
+
+
+def version(cfg):
+    return 'learning-v1.1' if cfg.get('error_cap') is not None else 'learning-v1'
 
 
 def run_model(name, root_out=None):
@@ -131,10 +140,18 @@ def run_model(name, root_out=None):
     issued = base.execute('SELECT path,sha256 FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=? AND sha256 NOT IN '
                           '(SELECT forecast_sha FROM exclusions) ORDER BY issued_at DESC', (today, kind)).fetchone()
     c = p.db(); p.verify(c)
-    registry = p.D / 'model-v1.json'
-    if not registry.exists(): p.exclusive(registry, dict(created_at=p.utc().isoformat(), model=name, base_ledger=cfg['base'], kind=kind,
-                                                         transform=cfg['transform'], scale=cfg['scale'], **POLICY))
-    weights_path = p.D / 'weights.npz'; weights = Weights(weights_path)
+    ver = version(cfg); registry = p.D / ('model-%s.json' % ver.split('-')[-1])
+    weights_path = p.D / 'weights.npz'
+    if not registry.exists():
+        if ver != 'learning-v1' and weights_path.exists():
+            # New policy: keep the old weights for the record and relearn from every comparison scored so far
+            # (all were observed before now, so nothing looks ahead).
+            weights_path.replace(p.D / 'weights-learning-v1.npz')
+        p.exclusive(registry, dict(created_at=p.utc().isoformat(), model=name, base_ledger=cfg['base'], kind=kind,
+                                   transform=cfg['transform'], scale=cfg['scale'], **dict(POLICY, version=ver),
+                                   error_cap=cfg.get('error_cap'),
+                                   **({'replaces': 'learning-v1 (uncapped: one storm taught every location to add ~2-3 mm/day)'} if ver != 'learning-v1' else {})))
+    weights = Weights(weights_path)
     trained = train(weights, base, kind, cfg); weights.save(weights_path)
     status = dict(model=name, trained_on_new_comparisons=trained, total_comparisons_learned=int(weights.n.sum()), last_comparison_row=weights.mark)
     if issued is None:
@@ -151,7 +168,7 @@ def run_model(name, root_out=None):
                     last_comparison_row_applied=weights.mark, comparisons_learned=int(weights.n.sum()))
         snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
         rows = learned_rows(record, weights, cfg)
-        p.seal(c, kind, rows, record.get('unavailable', []), snapshot, snap, registry, model_version='learning-v1',
+        p.seal(c, kind, rows, record.get('unavailable', []), snapshot, snap, registry, model_version=ver,
                extra_sources=[dict(path=path, sha256=sha), dict(path=str(frozen_weights.relative_to(ROOT)), sha256=p.digest(frozen_weights)),
                               dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code))])
         status['issued'] = '%d locations sealed or already present for %s' % (len(rows), today)

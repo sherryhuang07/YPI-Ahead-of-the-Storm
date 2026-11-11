@@ -9,3 +9,9 @@ The current issue (corrected November 6, 2026) covers November 7–20. Each day 
 The precipitation workflow runs from the daily prospective check. It retains the pre-existing history-only PRISM baseline in its original sealed ledger and saves NOAA guidance in the separate issue archive. A daily run will report NOAA download errors. Candidate boundaries are unconfirmed; NOAA values are point samples on the forecast grid and adjacent fields can share the same grid value.
 
 Primary source: [NOAA National Blend of Models](https://vlab.noaa.gov/web/mdl/nbm) and its [NOMADS filter catalog](https://nomads.ncep.noaa.gov/gribfilter.php?ds=blend).
+
+**Correction, November 11, 2026.** Days 12–14 are meant to be a 50/50 blend of NOAA's days 9–11 and the 42-day PRISM mean. When NOAA also gave a chance of rain for those days, the code averaged in the PRISM mean a second time, giving about 25% NOAA and 75% PRISM. Each day is now blended once. Earlier issues are retained unchanged.
+
+## Sealed scoring (from November 11, 2026)
+
+Each issue now also stores totals on PRISM's day (12:00–12:00 UTC, labelled by its end date), built only from direct NBM rain amounts. `scripts/noaa_precip_daily.py` (night run, after the NBM download) seals those totals once per Connecticut day in its own append-only ledger (`data/noaa-rain-prospective`, `outputs/noaa-rain-prospective`). Only PRISM days that start after the seal are included (about 10 per issue). They are scored against the first captured PRISM value, beside the location's last-14-day PRISM mean, the same rival as the history-only rain forecast. A learning version (`learning_daily.py`, model `noaa-rain`) corrects it from scored comparisons. Each lesson's error is capped at ±5 mm, so one storm cannot dominate. The app's accuracy page shows the result.

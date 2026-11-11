@@ -16,7 +16,7 @@ def main():
         if 'forecast' in r:save(model.OUT/'gauges'/(g['gauge_id']+'.json'),r)
     good=[r for r in results if 'forecast' in r]
     save(model.OUT/'results.json',results)
-    save(model.OUT/'summary.json',dict(issued=str(today),gauges_examined=len(results),trained=len(good),beat_persistence=sum(r['metrics']['mae_cfs']<r['metrics']['persistence_mae_cfs'] for r in good),input_variables=['streamflow'],purpose='Context at connected out-of-state gauges; not a routed prediction at Connecticut waterbodies',evaluation='Selection 2021–2022, calibration 2023, retrospective test 2024 onward; future ledger starts only at actual issuance'))
+    save(model.OUT/'summary.json',dict(issued=str(today),gauges_examined=len(results),trained=len(good),selected_persistence=sum(r['selected_method']=='persistence' for r in good),beat_persistence=sum(r['selected_method']!='persistence' and r['metrics']['mae_cfs']<r['metrics']['persistence_mae_cfs']-1e-9 for r in good),input_variables=['streamflow'],purpose='Context at connected out-of-state gauges; not a routed prediction at Connecticut waterbodies',evaluation='Selection 2021–2022, calibration 2023, retrospective test 2024 onward; future ledger starts only at actual issuance'))
     registry.parent.mkdir(parents=True,exist_ok=True)
     from prospective_daily import exclusive
     exclusive(registry,dict(created_at=datetime.now(ZoneInfo('UTC')).isoformat(),version='regional-v1',streamflow=good,groundwater=[],policy='Frozen neighboring-gauge models; each uses only its own discharge history and calendar date. Scored separately from CT-v1.'))

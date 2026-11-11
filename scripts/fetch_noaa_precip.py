@@ -88,8 +88,16 @@ def main():
    rows.setdefault(identifier,[]).append(dict(start=start.isoformat(),end=end.isoformat(),mm=max(0,value) if value is not None else None,probability=probability,forecast_hour=h,interval_hours=interval))
  forecast=[]
  for identifier,intervals in rows.items():
-  totals={};coverage={};probabilities={}
+  totals={};coverage={};probabilities={};prism={};prism_cov={}
   for item in intervals:
+    # Also total each interval on PRISM's day (12:00 UTC to 12:00 UTC, labelled by its end date), so the
+    # forecast can be scored against PRISM on exactly the same 24 hours (scripts/noaa_precip_daily.py).
+    if item['mm'] is not None:
+     b=datetime.fromisoformat(item['end'])-timedelta(hours=item['interval_hours']);e=datetime.fromisoformat(item['end'])
+     while b<e:
+      noon=b.replace(hour=12,minute=0,second=0,microsecond=0);noon=noon if noon>b else noon+timedelta(days=1)
+      stop=min(e,noon);lab=noon.date().isoformat();frac=(stop-b).total_seconds()/(item['interval_hours']*3600)
+      prism[lab]=prism.get(lab,0)+item['mm']*frac;prism_cov[lab]=prism_cov.get(lab,0)+(stop-b).total_seconds()/3600;b=stop
     zone=__import__('zoneinfo').ZoneInfo('America/New_York');finish=datetime.fromisoformat(item['end']);begin=finish-timedelta(hours=item['interval_hours']);full=(finish-begin).total_seconds()
     # The GRIB period is attached below; split multi-hour intervals at local midnight.
     while begin<finish:
@@ -98,7 +106,8 @@ def main():
      if item['mm'] is not None:totals[local]=totals.get(local,0)+item['mm']*portion;coverage[local]=coverage.get(local,0)+(stop-begin).total_seconds()/3600
      if item['probability'] is not None:probabilities[local]=max(probabilities.get(local,0),item['probability'])
      begin=stop
-  forecast.append(dict(id=identifier,daily_precipitation_mm={k:v for k,v in totals.items() if coverage.get(k,0)>=23.99},daily_max_hourly_pop=probabilities,interval_count=len(intervals)))
+  forecast.append(dict(id=identifier,daily_precipitation_mm={k:v for k,v in totals.items() if coverage.get(k,0)>=23.99},daily_max_hourly_pop=probabilities,interval_count=len(intervals),
+                       prism_day_mm={k:round(v,4) for k,v in sorted(prism.items()) if prism_cov.get(k,0)>=23.99}))
  # Keep only future local days. For days 12–14 use a transparent 50/50 extension of the
  # recent NBM daily mean and the preceding 42-day PRISM farm mean; do not call it NBM.
  from zoneinfo import ZoneInfo
@@ -129,11 +138,14 @@ def main():
   if baseline is not None and all(amounts[i] is not None for i in (8,9,10)):
    extended=float((np.mean([amounts[i] for i in (8,9,10)])+baseline)/2)
    for i in (11,12,13):amounts[i]=extended;methods[i]='50/50 blend: preceding NBM probability-guided estimate + trailing 42-day PRISM mean'
+  # Otherwise blend a probability-based day 12–14 estimate with the PRISM mean, once. (Before 2026-11-11 this
+  # step also ran on days already blended above, mixing in the PRISM mean twice: 25% NBM / 75% PRISM.)
   if baseline is not None:
    for i in range(11,14):
+    if methods[i].startswith('50/50 blend: preceding'):continue
     if amounts[i] is not None and f['daily_max_hourly_pop'].get(dates[i]) is not None:
      amounts[i]=(amounts[i]+baseline)/2;methods[i]='50/50 blend: NBM probability-adjusted PRISM estimate + trailing 42-day PRISM mean'
-  expanded.append(dict(id=f['id'],daily_precipitation_mm=amounts,day_sources=methods,daily_max_hourly_pop=[f['daily_max_hourly_pop'].get(d) for d in dates],history_42day_mean_mm=baseline,nbm_interval_count=f['interval_count'],boundary_status='Provisional candidate' if f['id']!='yale-farm-new-haven' else 'Pilot boundary provisional'))
+  expanded.append(dict(id=f['id'],daily_precipitation_mm=amounts,prism_day_precipitation_mm=f['prism_day_mm'],day_sources=methods,daily_max_hourly_pop=[f['daily_max_hourly_pop'].get(d) for d in dates],history_42day_mean_mm=baseline,nbm_interval_count=f['interval_count'],boundary_status='Provisional candidate' if f['id']!='yale-farm-new-haven' else 'Pilot boundary provisional'))
  manifest=dict(variable='precipitation',source='NOAA National Blend of Models (NBM), CONUS core QPF',dataset_name='blend',cycle=f'{day}T{cycle}:00Z',retrieved_at=datetime.now(timezone.utc).isoformat(),issued_at=datetime.now(timezone.utc).isoformat(),forecast_dates=dates,forecast_hours=hours,files=[dict(name=p.name,sha256=hashlib.sha256(p.read_bytes()).hexdigest()) for p in grids.values()],source_code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),prism_snapshot=snap.get('grids',{}),units='mm liquid-water equivalent per Connecticut calendar day',farm_count=len(expanded),forecasts=expanded,limitations=['Native NBM grid sampled at each mapped parcel representative point; mapped fields are candidates, not confirmed farm boundaries.','NBM supplies direct QPF only through the available 264-hour forecast. Final three days are a 50/50 extension of its preceding three-day mean and the trailing 42-day PRISM farm mean; that extension is not a weather-model forecast and has no calibrated uncertainty interval.','Local calendar-day totals are aggregated from GRIB accumulation intervals; missing intervals are never treated as zero.'])
  out=ROOT/'outputs/forecasts/precipitation/noaa-live';out.mkdir(parents=True,exist_ok=True)
  today=str(local_today);latest_path=out/'latest.json'

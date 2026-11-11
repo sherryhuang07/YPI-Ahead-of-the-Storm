@@ -14,7 +14,7 @@ Coastline, sea and estuary routes are excluded to prevent false connections acro
 
 ## Forecasts and honest evaluation
 
-66 of the 90 gauges passed the history and input requirements and have separately archived 14-day forecasts. The other 24 remain without forecasts. Training uses streamflow history alone, with chronological selection in 2021–2022, interval calibration in 2023 and retrospective testing from 2024 onward. 65 of 66 beat persistence in that retrospective comparison; this does not establish future performance or improved Connecticut forecasts.
+66 of the 90 gauges passed the history and input requirements and have separately archived 14-day forecasts. The other 24 remain without forecasts. Training uses streamflow history alone, with chronological selection in 2021–2022, interval calibration in 2023 and retrospective testing from 2024 onward. 63 of 66 beat persistence in that retrospective comparison; the other 3 use persistence itself, so they tie it (the summary file said 65 until November 11, 2026, counting two exact ties as wins); this does not establish future performance or improved Connecticut forecasts.
 
 The regional-v1 model is frozen in data/regional-prospective/model-v1.json. Its first prospective issue was November 4, 2026, for November 5–18. Original Connecticut predictions and models are retained separately. These new forecasts describe their own gauge locations; they are contextual information, not routed predictions at ungauged Connecticut waters.
 

@@ -34,7 +34,7 @@ DEEP's ratings come from the 1964 National Fire Danger Rating System: a **Spread
 `scripts/fire_danger_forecast.py`:
 
 - Days with NOAA National Blend of Models weather (about 10): DANGER is run forward at each airport from its current Build Up Index with NBM's 1 PM temperature, dew point and 10 m wind (times 0.87) and NBM rain in the 24 hours ending 1 PM (non-overlapping accumulations). Today is stepped first, without being forecast.
-- Later days: the class distribution that followed the last NOAA-forecast class in the same month, learned from the rebuilt 1997-2014 history.
+- Later days: the class distribution that followed the last NOAA-forecast class, for the month of that last NOAA-forecast day, learned from the rebuilt 1997-2014 history. (Until November 11, 2026 the live forecast looked these up by the target day's month instead, which differed from training and the held-out test near month boundaries.)
 - Held-out test of that second part (`outputs/fire-danger/latest-test.json`; trained 1997-2014, predictions for 2019-2025 sealed before scoring): day-1 accuracy 0.89 vs 0.89 for "no change"; day 7 0.59 vs 0.58; day 14 0.53 vs 0.47. It detects HIGH-or-worse days poorly a week or more out (it regresses toward typical days). Targets there are rebuilt ratings, not DEEP's.
 - The NOAA-driven days cannot be tested historically here (archived NBM forecasts are not downloaded). They are tested going forward.
 

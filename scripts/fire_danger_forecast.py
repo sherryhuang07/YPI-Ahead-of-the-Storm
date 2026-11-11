@@ -185,7 +185,10 @@ def forecast():
             out.append(dict(date=str(d), level=LEVELS[k], level_index=k, spread_index=round(si, 1), buildup_index=round(bi, 1),
                             method='NOAA NBM weather -> 1964 NFDRS indexes (median of %d airports)' % len(per)))
         elif last_class is not None:
-            p = probs[h - anchor, d.month, last_class]
+            # The odds were learned by the month of the starting day (training and the held-out test both
+            # use it), so look them up by the month of the last NBM day. Before 2026-11-11 this used the
+            # target day's month, which differed only near month boundaries.
+            p = probs[h - anchor, (today + timedelta(days=anchor)).month, last_class]
             out.append(dict(date=str(d), level=LEVELS[int(np.argmax(p))], level_index=float(p @ np.arange(5)), probabilities=[round(x, 3) for x in p],
                             method='Rebuilt-history conditional climatology from the last NBM day (%d days on)' % (h - anchor)))
         else:

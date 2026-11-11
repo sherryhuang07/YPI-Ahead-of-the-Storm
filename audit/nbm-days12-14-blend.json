@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-11-11T06:30:00+00:00",
+  "subject": "NOAA NBM live precipitation: days 12-14 blended with the PRISM mean twice; PRISM-day totals added for sealed scoring",
+  "problem": "When NBM precipitation probabilities existed for days 12-14, the 50/50 extension (mean of days 9-11 and the 42-day PRISM mean) was averaged with the PRISM mean a second time: about 25% NBM, 75% PRISM.",
+  "fix": "Each of days 12-14 is blended once. Issues also store prism_day_precipitation_mm (12:00-12:00 UTC days, direct NBM QPF only) for scripts/noaa_precip_daily.py.",
+  "reissue": {
+    "path": "outputs\\forecasts\\precipitation\\noaa-live\\issued\\2026-11-11\\20261111T055027291148Z.json",
+    "sha256": "6349709f3e212802aa1ce5eb65c9a872ade352f29f89c1170470b45a1e6a8a83",
+    "correction_of_sha256": "7ce5155915da818935e437461a58e4d4aa7a341a5ea955014ca6b7f240d12e09",
+    "cycle": "20261111T05:00Z"
+  },
+  "originals": "All earlier issues are retained unchanged."
+}

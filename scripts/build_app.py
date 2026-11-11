@@ -179,6 +179,7 @@ def accuracy():
         rows = [x for x in (b or {}).get('by_variable_and_lead', []) if x['variable'] == kind]
         n = sum(x['comparisons'] for x in rows); d1 = next((x for x in rows if x['forecast_day'] == 1), None)
         out.append(dict(name=name, page=page, comparisons=n, day1=None if not d1 else dict(err=fmt % (d1['mae'] * scale), simple=fmt % (d1['baseline_mae'] * scale), unit=unit)))
+    add('Rain (NOAA forecast shown in the app)', 'rain.html', 'outputs/noaa-rain-prospective/scoreboard.json', 'precipitation', 'in', 1 / 25.4)
     add('Rain (history-based baseline)', 'rain.html', 'outputs/prospective/scoreboard.json', 'precipitation', 'in', 1 / 25.4)
     add('Groundwater wells', 'wells.html', 'outputs/prospective/scoreboard.json', 'groundwater', 'ft')
     add('Streams (Connecticut gauges)', 'streams.html', 'outputs/prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')

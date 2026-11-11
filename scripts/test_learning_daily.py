@@ -47,6 +47,15 @@ class LearningTests(unittest.TestCase):
         c = ledger([('s', 'streamflow', 'a', '2026-11-04', 1, 10.0, 99.0)])
         w = Weights(self.path); self.assertEqual(train(w, c, 'groundwater', self.cfg), 0)
 
+    def test_rain_storm_lesson_is_capped(self):
+        # One 66 mm storm day against a 3 mm forecast teaches at most 5 mm (one scale unit), not 63 mm.
+        cfg = MODELS['precipitation']
+        c = ledger([('s', 'precipitation', 'f', '2026-11-07', 1, 3.0, 66.0)])
+        w = Weights(self.path); train(w, c, 'precipitation', cfg)
+        capped = w.apply('f', 1, 3.0, cfg['scale']) - 3.0
+        w2 = Weights(Path(self.dir.name) / 'u.npz'); train(w2, c, 'precipitation', dict(cfg, error_cap=None))
+        self.assertLess(capped, 1.5); self.assertGreater(w2.apply('f', 1, 3.0, cfg['scale']) - 3.0, 5 * capped)
+
     def test_bounds_and_log_space(self):
         cfg = MODELS['streamflow']
         c = ledger([('s%d' % k, 'streamflow', 'g', '2026-11-%02d' % (k + 1), 1, 100.0, 50.0) for k in range(60)])
