@@ -64,10 +64,9 @@ $nightJobs = @(
     @{ name = 'NOAA rain forecast test'; run = { & $python (Join-Path $root 'scripts\noaa_precip_daily.py') } },
     # Rain-aware wells (v2): refresh station rain for the last 60 days, then forecast with NOAA rain ahead.
     @{ name = 'Groundwater wells v2 (with NOAA rain)'; run = {
-        & $python (Join-Path $root 'scriptsuild_site_rain.py') --recent
+        & $python (Join-Path $root 'scripts\build_site_rain.py') --recent
         if ($LASTEXITCODE -ne 0) { Write-Host 'Station rain refresh failed; using rain already saved.' -ForegroundColor Yellow }
-        & $python (Join-Path $root 'scripts
-ain_models_daily.py') --kind groundwater } },
+        & $python (Join-Path $root 'scripts\rain_models_daily.py') --kind groundwater } },
     @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } },
     # Fire danger: archive DEEP's latest rating (the target), refresh recent airport weather,
     # rebuild the index history, then seal the 14-day forecast. Each step stops the chain if it fails.
@@ -99,8 +98,7 @@ ain_models_daily.py') --kind groundwater } },
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
     # Rain-aware Connecticut streams (v2), using this morning's readings and NOAA rain ahead.
-    @{ name = 'Connecticut stream gauges v2 (with NOAA rain)'; run = { & $python (Join-Path $root 'scripts
-ain_models_daily.py') --kind streamflow } },
+    @{ name = 'Connecticut stream gauges v2 (with NOAA rain)'; run = { & $python (Join-Path $root 'scripts\rain_models_daily.py') --kind streamflow } },
     @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
     @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow streamflow-v2 regional-streamflow } },
     # DEEP posts the day's fire danger rating before about 8 AM; a morning capture may get it early.
@@ -125,6 +123,14 @@ try {
 } finally { Pop-Location }
 $summary = [pscustomobject]@{ completed_at = (Get-Date).ToUniversalTime().ToString('o'); part = $Part; jobs = $results }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root ('outputs\daily-run-summary-' + $Part + '.json')) -Encoding utf8
+# Daily report (outputs/daily-reports/<date>.md): today's forecasts, newly scored comparisons and learning
+# changes, including this run's results; then refresh the app so its report page shows it.
+Push-Location $root
+try {
+    & $python (Join-Path $root 'scripts\daily_report.py')
+    if ($LASTEXITCODE -ne 0) { Write-Host 'Daily report could not be written.' -ForegroundColor Yellow }
+    & $python (Join-Path $root 'scripts\build_app.py') | Out-Null
+} finally { Pop-Location }
 $failed = @($results | Where-Object { $_.exit_code -ne 0 })
 $line = (Get-Date).ToUniversalTime().ToString('o') + ' | Daily forecasts (' + $Part + '): ' + ($results.Count - $failed.Count) + ' of ' + $results.Count + ' jobs ok' + $(if ($failed.Count) { '; failed: ' + (($failed | ForEach-Object { $_.job }) -join ', ') } else { '' })
 Add-Content -LiteralPath (Join-Path $root 'activity.log') -Value $line -Encoding utf8

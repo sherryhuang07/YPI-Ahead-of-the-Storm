@@ -73,6 +73,12 @@ Each original model keeps its frozen weights, so its prospective score stays a f
 
 To pause or remove the schedule: disable or delete those tasks in Task Scheduler, or run `Unregister-ScheduledTask -TaskName 'Ahead of the Storm - Daily Forecasts (night)'` (and `(morning)`) in PowerShell.
 
+**Daily report.** After every part (night and morning), `scripts/daily_report.py` writes `outputs/daily-reports/<date>.md` (and `.json`), and the app shows it on its "Today's report" page. The morning report is the complete one for the day. It covers:
+- each part's run status;
+- today's forecast headlines for every model;
+- the comparisons newly scored since the previous day's report (model vs. "no change");
+- for each learning version, the new lessons, its current correction, how that correction moved since the previous day's sealed forecast (read from the weights each sealed forecast recorded), and learning vs. original on the newly scored cases.
+
 ## Operation and recovery
 
 Network recovery on November 5, 2026: restricted execution produced DNS failures for USGS, PRISM and NOAA although workstation DNS worked. Run the two daily Python commands with their authorized network permissions (`sandbox_permissions=require_escalated`). If permission is unavailable, report that explicitly. A connection failure does not establish that daily data were unpublished. Successful same-day retries refresh inputs and scores but retain the day's sealed records, including empty streamflow coverage. New scheduled issues use the recovered inputs under the existing model policy.

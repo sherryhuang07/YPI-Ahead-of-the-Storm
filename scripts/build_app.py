@@ -207,7 +207,8 @@ MODELS = [('drought', 'Drought outlook', 'Will drought develop or ease?', 'drop'
           ('soil', 'Soil moisture', 'Water in the top 3 feet of soil', 'soil'), ('streams', 'Streams and rivers', 'Flow at river gauges', 'river'),
           ('wells', 'Groundwater', 'Water level in monitoring wells', 'well'), ('fire', 'Fire danger', 'Forest fire danger rating', 'fire'),
           ('coast', 'Coastal water', 'Long Island Sound temperature', 'wave'), ('reservoirs', 'Reservoirs', 'Drinking-water supply levels', 'dam'),
-          ('accuracy', 'How accurate are we?', 'Forecasts checked against what happened', 'check')]
+          ('accuracy', 'How accurate are we?', 'Forecasts checked against what happened', 'check'),
+          ('report', "Today's report", 'Forecasts, new checks and what the learning versions changed', 'check')]
 ICONS = {
     'drop': '<path d="M12 3c3 4.5 6 8 6 11a6 6 0 0 1-12 0c0-3 3-6.5 6-11z"/>',
     'rain': '<path d="M7 15a4 4 0 1 1 1-7.9A5 5 0 0 1 17.6 9 3.5 3.5 0 0 1 17 16H7z"/><path d="M8 19l-1 2M12 19l-1 2M16 19l-1 2"/>',
@@ -470,6 +471,16 @@ $('#t').innerHTML='<thead><tr><th>Water system</th><th>County</th><th class="num
 <div class="card"><b>Learning versions.</b> Beside each forecast, a "learning" copy adjusts itself every day using these comparisons. If it proves better over time, it can replace the original.</div>""" + '<h2>Other parts of the forecast</h2>' + tiles('accuracy'),
         A, r"""
 $('#t').innerHTML='<thead><tr><th>Forecast</th><th class="num">Checks so far<div class="small" style="text-transform:none">one per place per day</div></th><th>Next-day error vs simple guess</th></tr></thead><tbody>'+DATA.map(r=>`<tr><td><a href="${r.page}">${r.name}</a></td><td class="num">${r.comparisons.toLocaleString()}</td><td>${r.day1?`${r.day1.err} vs ${r.day1.simple} ${r.day1.unit}`:'<span class="muted">waiting for measurements</span>'}</td></tr>`).join('')+'</tbody>';"""))
+    # ---------------- daily report (outputs/daily-reports, written after every daily run)
+    latest = j('outputs/daily-reports/latest.json'); REP = j(latest['json']) if latest else None
+    write('report', page('report', "Today's report", """
+<h1>Today's report</h1><p class="lead" id="when"></p><div id="rep"></div>""" + '<h2>Other parts of the forecast</h2>' + tiles('report'),
+        REP, r"""
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+if(!DATA){$('#when').textContent='No report yet. One is written after every daily forecast run.';}
+else{$('#when').textContent='Written '+DATA.generated_local+' (Connecticut time), after the latest daily run.';
+$('#rep').innerHTML=DATA.sections.map(s=>`<h2>${esc(s.title)}</h2><div class="card tablewrap"><table><thead><tr>${s.table.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
+ s.table.rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${(s.notes||[]).map(n=>`<p class="small muted">${esc(n)}</p>`).join('')}`).join('');}"""))
     return dict(pages=sorted(p.name for p in APP.glob('*.html')))
 
 
