@@ -36,6 +36,8 @@ MODELS = {
     'noaa-rain': dict(base='data/noaa-rain-prospective', kind='precipitation', transform='identity', scale=5.0, low=0.0, high=None, error_cap=1.0),
     'groundwater': dict(base='data/prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'streamflow': dict(base='data/prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'streamflow-v2': dict(base='data/streamflow-v2-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'groundwater-v2': dict(base='data/groundwater-v2-prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'regional-streamflow': dict(base='data/regional-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'root-zone': dict(base='data/root-zone-prospective', kind='root-zone', transform='identity', scale=0.01, low=0.0, high=1.0),
     'fire-danger': dict(base='data/fire-danger-prospective', kind='fire-danger', transform='identity', scale=0.5, low=0.0, high=4.0),

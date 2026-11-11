@@ -21,7 +21,7 @@ Choose **6** to browse statewide farm-boundary candidates by town. All 169 towns
 
 Choose **7** for cumulative precipitation from PRISM's nominal 800-meter daily grids. The saved snapshot covers 90 days through November 1, 2026; it is not automatically refreshed. Totals are available for Yale Farm, statewide farm candidates, and Connecticut portions of watersheds. See `PRECIPITATION.md` for methods and limitations.
 
-Choose **1** for three separate experimental 14-day forecast baselines. They use only their own precipitation, groundwater, or streamflow history. They are not operationally validated: the rainfall baseline failed its held-out comparison, farm groundwater is unavailable, and streamflow is limited to supported gauges. See `FORECASTS.md` for actual coverage and test results.
+Choose **1** for three separate experimental 14-day forecast baselines. They use only their own precipitation, groundwater, or streamflow history. They are not operationally validated: the rainfall baseline failed its held-out comparison, farm groundwater is unavailable, and streamflow is limited to supported gauges. See `FORECASTS.md` for actual coverage and test results. Rain-aware versions of the stream and well forecasts (v2: recent station rain plus NOAA's rain forecast) run beside them and feed the app's stream and well pages; see `RAIN-AWARE-MODELS.md`.
 
 Farm sensors, research papers, and local resources are not connected yet. Root-zone soil moisture (historical test plus a live 1-14 day research forecast) is available separately under option 14. This app does not recommend farm actions.
 

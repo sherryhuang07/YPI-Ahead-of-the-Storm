@@ -139,17 +139,26 @@ def soil():
                 test=dict((h, score['by_horizon'][h]) for h in ('1', '7', '14')) if score else None)
 
 
+def rain_aware(kind):
+    """Today's v2 (rain-aware) issue if its frozen adopt rule passed and it is sealed today; else None."""
+    run = j('outputs/%s-v2-prospective/last-run.json' % kind)
+    if run and run.get('adopted_for_app') and run.get('sealed_today'):
+        r = j(run['sealed_today'])
+        if r and r['forecasts']: return r
+    return None
+
+
 def streams():
-    r = latest_issue('streamflow')
+    r = rain_aware('streamflow') or latest_issue('streamflow')
     if not r: return None
-    return dict(issued=r['issued_at'], gauges=[dict(name=g['name'], dates=g['dates'], flow=[round(v, 1) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
+    return dict(issued=r['issued_at'], with_rain=r.get('model_version') == 'streamflow-v2', gauges=[dict(name=g['name'], dates=g['dates'], flow=[round(v, 1) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
                                              for g in sorted(r['forecasts'], key=lambda g: g['name'])], withheld=len(r['unavailable']))
 
 
 def wells():
-    r = latest_issue('groundwater')
+    r = rain_aware('groundwater') or latest_issue('groundwater')
     if not r: return None
-    return dict(issued=r['issued_at'], wells=[dict(name=g['name'], dates=g['dates'], depth=[round(v, 2) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
+    return dict(issued=r['issued_at'], with_rain=r.get('model_version') == 'groundwater-v2', wells=[dict(name=g['name'], dates=g['dates'], depth=[round(v, 2) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
                                             for g in r['forecasts']])
 
 
@@ -182,7 +191,9 @@ def accuracy():
     add('Rain (NOAA forecast shown in the app)', 'rain.html', 'outputs/noaa-rain-prospective/scoreboard.json', 'precipitation', 'in', 1 / 25.4)
     add('Rain (history-based baseline)', 'rain.html', 'outputs/prospective/scoreboard.json', 'precipitation', 'in', 1 / 25.4)
     add('Groundwater wells', 'wells.html', 'outputs/prospective/scoreboard.json', 'groundwater', 'ft')
+    add('Groundwater wells, with NOAA rain (v2)', 'wells.html', 'outputs/groundwater-v2-prospective/scoreboard.json', 'groundwater', 'ft')
     add('Streams (Connecticut gauges)', 'streams.html', 'outputs/prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
+    add('Streams, with NOAA rain (v2)', 'streams.html', 'outputs/streamflow-v2-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Soil moisture', 'soil.html', 'outputs/root-zone-prospective/scoreboard.json', 'root-zone', '% soil water', 100, '%.2f')
     add('Fire danger', 'fire.html', 'outputs/fire-danger-prospective/scoreboard.json', 'fire-danger', 'classes')
     add('Coastal water temperature', 'coast.html', 'outputs/water-temp-prospective/scoreboard.json', 'water-temp', '°F', 1.8, '%.1f')
@@ -391,12 +402,12 @@ const t=S.test;$('#sure').innerHTML=t?`<p>Tested on 2015–2020, years kept out 
 
     # ---------------- streams
     write('streams', page('streams', 'Streams and rivers', """
-<h1>Streams and rivers</h1><p class="lead">Expected river flow at USGS gauges for the next 14 days, based on each river's own recent history.</p>
+<h1>Streams and rivers</h1><p class="lead">Expected river flow at USGS gauges for the next 14 days.</p><p class="small muted" id="how"></p>
 <div class="picker"><label for="g"><b>River gauge</b></label><select id="g"></select></div>
 <div class="card"><div class="chart" id="c"></div><p id="s"></p></div>
 <div class="note small">These forecasts use only each river's past flow, so they can't see a coming storm. Flow is in cubic feet per second (cfs).</div>""" + '<h2>Other parts of the forecast</h2>' + tiles('streams'),
         ST, r"""
-const G=DATA?DATA.gauges:[];$('#g').innerHTML=G.map((g,i)=>`<option value="${i}">${g.name}</option>`).join('');
+$('#how').textContent=DATA&&DATA.with_rain?"Uses each river's recent flow, the rain that has fallen in its drainage area, and NOAA's rain forecast for the next 10 days.":"Based on each river's own recent flow history.";const G=DATA?DATA.gauges:[];$('#g').innerHTML=G.map((g,i)=>`<option value="${i}">${g.name}</option>`).join('');
 const mill=G.findIndex(g=>/MILL RIVER/i.test(g.name));if(mill>=0)$('#g').value=mill;
 function show(i){const g=G[i];lineChart($('#c'),g.dates,[{name:'Expected flow',values:g.flow,color:'var(--rain)'}],{unit:'cfs',zero:1,label:'Expected river flow'});
  const ch=(g.flow[g.flow.length-1]-g.last)/g.last;$('#s').innerHTML=`Last reading (${fmtDate(g.last_day)}): <b>${g.last} cfs</b>. Expected in 14 days: <b>${g.flow[g.flow.length-1]} cfs</b> (${ch>.1?'higher':ch<-.1?'lower':'about the same'}).`}
@@ -404,11 +415,12 @@ if(G.length){$('#g').onchange=e=>show(e.target.value);show($('#g').value)}else $
 
     # ---------------- wells
     write('wells', page('wells', 'Groundwater', """
-<h1>Groundwater</h1><p class="lead">Water level in USGS monitoring wells for the next 14 days. Measured as depth below the ground: a bigger number means the water is lower.</p>
+<h1>Groundwater</h1><p class="lead">Water level in USGS monitoring wells for the next 14 days. Measured as depth below the ground: a bigger number means the water is lower.</p><p class="small muted" id="how"></p>
 <div class="picker"><label for="g"><b>Well</b></label><select id="g"></select></div>
 <div class="card"><div class="chart" id="c"></div><p id="s"></p></div>
 <div class="note small">These are a few public monitoring wells, not the water under your farm. Wells nearby can tap different underground layers.</div>""" + '<h2>Other parts of the forecast</h2>' + tiles('wells'),
         W, r"""
+$('#how').textContent=DATA&&DATA.with_rain?"Uses each well's recent levels, the rain that has fallen nearby, and NOAA's rain forecast for the next 10 days.":"Based on each well's own recent levels.";
 const G=DATA?DATA.wells:[];$('#g').innerHTML=G.map((g,i)=>`<option value="${i}">${g.name.replace(/^CT- ?\w+ +\d+ +/,'')}</option>`).join('');
 function show(i){const g=G[i];lineChart($('#c'),g.dates,[{name:'Depth to water',values:g.depth,color:'var(--accent)'}],{unit:'feet below ground',invert:1,dp:2,label:'Expected depth to water'});
  const ch=g.depth[g.depth.length-1]-g.last;$('#s').innerHTML=`Last reading (${fmtDate(g.last_day)}): water <b>${g.last.toFixed(1)} feet</b> below ground. In 14 days: <b>${g.depth[g.depth.length-1].toFixed(1)} feet</b> &mdash; ${ch>0.05?'water level dropping':ch<-0.05?'water level rising':'about the same'}.`}

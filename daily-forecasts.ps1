@@ -62,6 +62,12 @@ $nightJobs = @(
     @{ name = 'Precipitation and groundwater wells (+ NOAA NBM)'; run = { & $python $prospective --only precipitation groundwater } },
     # The NOAA rain forecast the app shows, sealed in its own ledger on PRISM's 7 AM-7 AM day (needs the NBM issue above).
     @{ name = 'NOAA rain forecast test'; run = { & $python (Join-Path $root 'scripts\noaa_precip_daily.py') } },
+    # Rain-aware wells (v2): refresh station rain for the last 60 days, then forecast with NOAA rain ahead.
+    @{ name = 'Groundwater wells v2 (with NOAA rain)'; run = {
+        & $python (Join-Path $root 'scriptsuild_site_rain.py') --recent
+        if ($LASTEXITCODE -ne 0) { Write-Host 'Station rain refresh failed; using rain already saved.' -ForegroundColor Yellow }
+        & $python (Join-Path $root 'scripts
+ain_models_daily.py') --kind groundwater } },
     @{ name = 'Root-zone soil moisture'; run = { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'root-zone-update.ps1') -Step daily } },
     # Fire danger: archive DEEP's latest rating (the target), refresh recent airport weather,
     # rebuild the index history, then seal the 14-day forecast. Each step stops the chain if it fails.
@@ -88,12 +94,15 @@ $nightJobs = @(
         if ($LASTEXITCODE -ne 0) { Write-Host 'VegDRI download failed; using the weeks already saved.' -ForegroundColor Yellow }
         & $python (Join-Path $root 'scripts\drought_daily.py') --version v2 } },
     # Learning versions run after the originals: they learn from newly scored comparisons, then correct today's original.
-    @{ name = 'Learning versions: rain (history and NOAA), groundwater, root-zone, fire danger, water temperature, drought v1 and v2'; run = { & $python $learning --models precipitation noaa-rain groundwater root-zone fire-danger water-temp drought drought-v2 } }
+    @{ name = 'Learning versions: rain (history and NOAA), groundwater, root-zone, fire danger, water temperature, drought v1 and v2'; run = { & $python $learning --models precipitation noaa-rain groundwater groundwater-v2 root-zone fire-danger water-temp drought drought-v2 } }
 )
 $morningJobs = @(
     @{ name = 'Connecticut stream gauges'; run = { & $python $prospective --only streamflow --skip-noaa } },
+    # Rain-aware Connecticut streams (v2), using this morning's readings and NOAA rain ahead.
+    @{ name = 'Connecticut stream gauges v2 (with NOAA rain)'; run = { & $python (Join-Path $root 'scripts
+ain_models_daily.py') --kind streamflow } },
     @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
-    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow regional-streamflow } },
+    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow streamflow-v2 regional-streamflow } },
     # DEEP posts the day's fire danger rating before about 8 AM; a morning capture may get it early.
     @{ name = 'DEEP fire danger rating capture'; run = { & $python (Join-Path $root 'scripts\fetch_fire_danger_reports.py') } }
 )
