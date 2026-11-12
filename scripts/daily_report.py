@@ -164,17 +164,23 @@ def learning(since, day):
             v = s * z['w'][..., 0][z['n'] > 0]
             return v * 100 if cfg['transform'] == 'log1p' else v       # log-flow nudge ~ percent
         v = nudge(now)
-        lessons_new = int(nn.sum() - (before['n'].sum() if before is not None and before['w'].shape == now['w'].shape else 0))
-        # A new learning policy registered since yesterday's forecast means the weights were relearned from scratch.
+        lessons_new = int(nn.sum() - (before['n'].sum() if before is not None else 0))
+        # Relearned = an earlier set of weights was replaced (its archive file exists) by a new learning policy
+        # registered after yesterday's forecast. New locations or first lessons are not relearning.
+        stamp = lambda w: datetime.strptime(Path(w).parent.name[:15], '%Y%m%dT%H%M%S').replace(tzinfo=timezone.utc).isoformat()
+        archived = (ROOT / 'data/learning' / name / 'weights-learning-v1.npz').exists()
         new_policy = [f for f in glob.glob(str(ROOT / 'data/learning' / name / 'model-v*.json'))
-                      if Path(f).name != 'model-v1.json' and prev and read(f)['created_at'] > datetime.strptime(Path(prev[-1]).parent.name[:15], '%Y%m%dT%H%M%S').replace(tzinfo=timezone.utc).isoformat()]
-        after_issue = bool(new_policy) and cur and read(new_policy[0])['created_at'] > datetime.strptime(Path(cur[-1]).parent.name[:15], '%Y%m%dT%H%M%S').replace(tzinfo=timezone.utc).isoformat()
+                      if archived and Path(f).name != 'model-v1.json' and prev and read(f)['created_at'] > stamp(prev[-1])]
+        after_issue = bool(new_policy) and bool(cur) and read(new_policy[0])['created_at'] > stamp(cur[-1])
         if after_issue:                                  # relearned after today's forecast: report the weights tomorrow will use
             now = np.load(wpath); nn = now['n']; trained = nn > 0; v = nudge(now)
-        relearned = before is not None and (bool(new_policy) or before['w'].shape != now['w'].shape or before['n'].sum() > nn.sum())
+        relearned = before is not None and before['n'].sum() > 0 and (bool(new_policy) or before['n'].sum() > nn.sum())
         if relearned: lessons_new = int(nn.sum())
         change = ('relearned under %s%s' % (read(new_policy[0])['version'], ' after today\'s forecast; applies from tomorrow' if after_issue else '')) if new_policy else '–'
-        if before is not None and not relearned and trained.any():
+        if not cur: change = "today's forecast not issued yet (runs %s)" % ('in the morning part' if cfg['kind'] == 'streamflow' else 'in the night part')
+        if cur and trained.any() and (before is None or before['n'].sum() == 0):
+            change = 'first lessons'
+        elif cur and before is not None and not relearned and trained.any():
             ids_b = {k: i for i, k in enumerate(before['ids'])}; d = []
             for i, k in enumerate(now['ids']):
                 j = ids_b.get(k)

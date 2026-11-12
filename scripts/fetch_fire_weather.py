@@ -62,7 +62,10 @@ def num(v):
     except (TypeError, ValueError): return None
 
 
-def build(station, start, end):
+NCEI_DOWN = []   # set after NOAA's daily-summaries service fails, so later stations don't wait on it again
+
+
+def build(station, start, end, saved=None):
     obs = []
     for r in hourly(station, start - timedelta(days=1), end):
         t = datetime.strptime(r['valid'], '%Y-%m-%d %H:%M').replace(tzinfo=timezone.utc)
@@ -75,7 +78,16 @@ def build(station, start, end):
             rain_by_hour[(t + timedelta(minutes=60 - t.minute)).replace(second=0)] = p
     by_day = defaultdict(list)
     for o in obs: by_day[o[0].astimezone(LOCAL).date()].append(o)
-    daily = snow(STATIONS[station][0], start, end); out = []
+    # NOAA's daily service (snow depth, daily rain) can be down for hours. Then keep what was saved for
+    # these days instead of failing the whole fire forecast; hourly airport weather comes from Iowa Mesonet.
+    daily = {}
+    if not NCEI_DOWN:
+        try: daily = snow(STATIONS[station][0], start, end)
+        except requests.RequestException as e:
+            NCEI_DOWN.append(type(e).__name__); print('  NOAA daily service unavailable (%s); keeping saved snow depth and daily rain.' % type(e).__name__, flush=True)
+    if NCEI_DOWN and saved:
+        daily = {d: {'SNWD': r.get('snow_depth_in', ''), 'PRCP': r.get('ghcn_precip_in', '')} for d, r in saved.items()}
+    out = []
     d = start
     while d <= end:
         target = datetime.combine(d, datetime.min.time(), LOCAL).replace(hour=13)
@@ -107,7 +119,9 @@ def main():
     manifest = dict(old_manifest.get('stations', {})) if a.merge_days else {}
     for s in a.stations:
         print('Downloading %s (%s)...' % (s, STATIONS[s][1]), flush=True)
-        rows = build(s, start, end); path = OUT / (s + '.csv')
+        path = OUT / (s + '.csv')
+        saved = {r['date']: r for r in csv.DictReader(path.open(encoding='utf-8'))} if path.exists() else {}
+        rows = build(s, start, end, saved)
         if a.merge_days and path.exists():
             # Recent days are re-read because late reports and snow depth fill in; older days are kept as saved.
             kept = [r for r in csv.DictReader(path.open(encoding='utf-8')) if r['date'] < str(start)]
@@ -119,7 +133,8 @@ def main():
         print('  %d days, %d with complete 1 PM weather and 24-hour rain' % (len(rows), complete), flush=True)
     first = old_manifest.get('start', a.start) if a.merge_days else a.start
     save(OUT / 'manifest.json', dict(created_at=datetime.now(timezone.utc).isoformat(), start=first, end=a.end, stations=manifest,
-                                     sources=['Iowa Environmental Mesonet ASOS archive (NOAA METAR), routine hourly reports', 'NOAA NCEI GHCN-Daily snow depth']))
+                                     sources=['Iowa Environmental Mesonet ASOS archive (NOAA METAR), routine hourly reports', 'NOAA NCEI GHCN-Daily snow depth'],
+                                     **({'ncei_unavailable': 'NOAA daily service down at this update (%s): saved snow depth and daily rain kept; days not yet saved have none, so the hourly airport rain is used' % NCEI_DOWN[0]} if NCEI_DOWN else {})))
     log('Fire danger: downloaded 1 PM weather history %s to %s for %s.' % (a.start, a.end, ', '.join(a.stations)))
 
 
