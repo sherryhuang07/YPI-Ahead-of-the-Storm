@@ -2,6 +2,7 @@
 
   rain_models_daily.py --kind groundwater   (night part, after the v1 issue and the NOAA rain download)
   rain_models_daily.py --kind streamflow    (morning part, after v1 streams)
+  rain_models_daily.py --kind regional-streamflow   (morning part, after the neighboring-state v1 issue)
 
 Inputs are the same readings v1 just used (the newest prospective snapshot; wells add the stored
 2001-2026 history for their one-year average), plus rain from site_rain.live_series: station rain,
@@ -22,8 +23,13 @@ import prospective_daily as p
 from statewide_common import ROOT, read, save, log
 from site_rain import live_series, window_sum
 
-CFG = {'streamflow': dict(trained='outputs/streamflow-v2', version='streamflow-v2', key='gauge_id', horizon=10),
-       'groundwater': dict(trained='outputs/groundwater-v2', version='groundwater-v2', key='id', horizon=10)}
+CFG = {'streamflow': dict(trained='outputs/streamflow-v2', version='streamflow-v2', key='gauge_id', horizon=10, variable='streamflow',
+                         readings='outputs/prospective/last-run.json', base='data/prospective', rain='site-rain'),
+       'groundwater': dict(trained='outputs/groundwater-v2', version='groundwater-v2', key='id', horizon=10, variable='groundwater',
+                           readings='outputs/prospective/last-run.json', base='data/prospective', rain='site-rain'),
+       # Neighboring-state gauges: readings from the regional ledger's snapshot, rain from the regional set.
+       'regional-streamflow': dict(trained='outputs/regional-streamflow-v2', version='regional-streamflow-v2', key='gauge_id', horizon=10, variable='streamflow',
+                                   readings='outputs/regional-prospective/last-run.json', base='data/regional-prospective', rain='site-rain-regional')}
 LEADS = list(range(2, 16))
 
 
@@ -64,26 +70,26 @@ def well_history(wid, snap_vals):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--kind', choices=sorted(CFG), required=True); ap.add_argument('--test-dir'); a = ap.parse_args()
-    kind = a.kind; cfg = CFG[kind]; base = Path(a.test_dir) if a.test_dir else None
+    kind = a.kind; cfg = CFG[kind]; var = cfg['variable']; base = Path(a.test_dir) if a.test_dir else None
     p.D = base / 'data' if base else ROOT / ('data/%s-v2-prospective' % kind)
     p.O = base / 'outputs' if base else ROOT / ('outputs/%s-v2-prospective' % kind)
     p.D.mkdir(parents=True, exist_ok=True); p.O.mkdir(parents=True, exist_ok=True)
     c = p.db(); p.verify(c); reg_path, reg = registry(kind)
     models = {r[cfg['key']]: r for r in read(ROOT / reg['results_path']) if r.get('status') == 'trained'}
-    last_run = read(ROOT / 'outputs/prospective/last-run.json'); snapshot_in = read(ROOT / last_run['snapshot'])
+    last_run = read(ROOT / cfg['readings']); snapshot_in = read(ROOT / last_run['snapshot'])
     now = p.utc(); today = now.astimezone(p.LOCAL).date()
-    rain, cycle = live_series(today)
+    rain, cycle = live_series(today, name=cfg['rain'])
     rows = []; missing = []
     for sid, m in models.items():
         try:
-            vals = snapshot_in['values'][kind].get(sid)
+            vals = snapshot_in['values'][var].get(sid)
             if not vals: raise ValueError('No current readings in the snapshot')
-            hist = well_history(sid, vals) if kind == 'groundwater' else {k: float(v) for k, v in vals.items()}
+            hist = well_history(sid, vals) if var == 'groundwater' else {k: float(v) for k, v in vals.items()}
             last = date.fromisoformat(max(hist)); age = (today - last).days
             if age != 1: raise ValueError('Needs yesterday\'s reading (latest is %s)' % last)
             R = rain[sid]; days = R['days']; i = days.index(str(last)); r = R['rain']; src = R['source']
             month = str(last.month)
-            if kind == 'streamflow':
+            if var == 'streamflow':
                 q = np.array([hist.get(str(last - timedelta(days=27 - k)), np.nan) for k in range(28)])
                 if not np.isfinite(q).all(): raise ValueError('Recent 28-day flow window is incomplete')
                 z = np.log1p(q); doy = last.timetuple().tm_yday
@@ -106,13 +112,13 @@ def main():
                 normal_row = np.array(m['normal_ahead'][month])[k] if month in m['normal_ahead'] else np.mean([np.array(v)[k] for v in m['normal_ahead'].values()], 0)
                 ah, note = ahead(r, src, i, L, normal_row, cfg['horizon']); how.append(note)
                 y = lin(m['models'][k], xb + past + ah)
-                if kind == 'streamflow':
+                if var == 'streamflow':
                     w = m['band_log_width'][k]; pred.append(float(np.expm1(np.clip(y, 0, 20)))); lo.append(float(np.expm1(np.clip(y - w, 0, 20)))); hi.append(float(np.expm1(np.clip(y + w, 0, 20))))
                 else:
                     w = m['band_width_ft'][k]; pred.append(base_value + y); lo.append(base_value + y - w); hi.append(base_value + y + w)
             dates = [str(today + timedelta(days=j)) for j in range(1, 15)]
             rows.append(dict(id=sid, name=m.get('name', sid), dates=dates, prediction=pred, lower_90=lo, upper_90=hi, baseline=[base_value] * 14,
-                             source_last_day=str(last), rain_inputs=how, units='cfs' if kind == 'streamflow' else 'feet below land surface at monitored well'))
+                             source_last_day=str(last), rain_inputs=how, units='cfs' if var == 'streamflow' else 'feet below land surface at monitored well'))
         except (ValueError, KeyError) as e:
             missing.append(dict(id=sid, reason=str(e)))
     folder = p.D / 'snapshots' / p.stamp(); folder.mkdir(parents=True)
@@ -121,16 +127,16 @@ def main():
     snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
     code = folder / 'rain-models-runner.py'
     with code.open('xb') as fh: fh.write(Path(__file__).read_bytes())
-    p.seal(c, kind, rows, missing, snapshot, snap, reg_path, model_version=reg['version'],
+    p.seal(c, var, rows, missing, snapshot, snap, reg_path, model_version=reg['version'],
            extra_sources=[dict(path=reg['results_path'], sha256=reg['results_sha256']), dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code))])
-    base_db = __import__('sqlite3').connect('file:%s?mode=ro' % (ROOT / 'data/prospective/ledger.sqlite').as_posix(), uri=True)
+    base_db = __import__('sqlite3').connect('file:%s?mode=ro' % (ROOT / cfg['base'] / 'ledger.sqlite').as_posix(), uri=True)
     wanted = {}
     for fpath, in c.execute('SELECT path FROM forecasts'):
         for rr in read(ROOT / fpath)['forecasts']: wanted.setdefault(rr['id'], set()).update(rr['dates'])
-    for row in base_db.execute('SELECT variable,location,day,value,captured_at,snapshot FROM observations WHERE variable=?', (kind,)):
+    for row in base_db.execute('SELECT variable,location,day,value,captured_at,snapshot FROM observations WHERE variable=?', (var,)):
         if row[2] in wanted.get(row[1], ()): c.execute('INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?,?)', row)
     c.commit(); new = p.score(c)
-    issued = c.execute('SELECT path FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=?', (str(today), kind)).fetchone()
+    issued = c.execute('SELECT path FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=?', (str(today), var)).fetchone()
     save(p.O / 'last-run.json', dict(completed_at=p.utc().isoformat(), issue_day=str(today), sealed_today=issued[0] if issued else None, model_version=reg['version'],
                                      adopted_for_app=reg['adopt'], locations=len(rows), withheld=missing, nbm_cycle=cycle, new_comparisons=new))
     log('%s v2 (with rain): %d sealed, %d withheld; NOAA cycle %s; %d new comparisons.' % (kind, len(rows), len(missing), cycle, new))

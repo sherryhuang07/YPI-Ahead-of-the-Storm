@@ -114,9 +114,17 @@ def train(g, rain, normal_series):
 
 
 def main():
-    reg = read(ROOT / 'data/prospective/model-v1.json')
-    rain, rstart = rain_history(); assert rstart == START
-    meta = {s['id']: s for s in read(ROOT / 'data/rain-stations/site-rain.json')['sites']}
+    import argparse
+    global OUT, POLICY
+    ap = argparse.ArgumentParser(); ap.add_argument('--set', choices=['ct', 'regional'], default='ct'); a = ap.parse_args()
+    if a.set == 'regional':
+        # Neighboring-state gauges: same method, splits and adopt rule; their frozen regional-v1 models are the comparison.
+        OUT = ROOT / 'outputs/regional-streamflow-v2'
+        POLICY = dict(POLICY, version='regional-streamflow-v2', base='neighboring-state streamflow v1 (data/regional-prospective/model-v1.json)')
+    reg = read(ROOT / ('data/regional-prospective/model-v1.json' if a.set == 'regional' else 'data/prospective/model-v1.json'))
+    rain_name = 'site-rain-regional' if a.set == 'regional' else 'site-rain'
+    rain, rstart = rain_history(rain_name); assert rstart == START
+    meta = {s['id']: s for s in read(ROOT / 'data/rain-stations' / (rain_name + '.json'))['sites']}
     results = []
     for g in reg['streamflow']:
         r = rain.get(g['gauge_id'])

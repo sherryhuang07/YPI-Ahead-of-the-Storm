@@ -194,6 +194,8 @@ def accuracy():
     add('Groundwater wells, with NOAA rain (v2)', 'wells.html', 'outputs/groundwater-v2-prospective/scoreboard.json', 'groundwater', 'ft')
     add('Streams (Connecticut gauges)', 'streams.html', 'outputs/prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Streams, with NOAA rain (v2)', 'streams.html', 'outputs/streamflow-v2-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
+    add('Neighboring-state streams (upstream context)', 'streams.html', 'outputs/regional-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
+    add('Neighboring-state streams, with NOAA rain (v2)', 'streams.html', 'outputs/regional-streamflow-v2-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Soil moisture', 'soil.html', 'outputs/root-zone-prospective/scoreboard.json', 'root-zone', '% soil water', 100, '%.2f')
     add('Fire danger', 'fire.html', 'outputs/fire-danger-prospective/scoreboard.json', 'fire-danger', 'classes')
     add('Coastal water temperature', 'coast.html', 'outputs/water-temp-prospective/scoreboard.json', 'water-temp', '°F', 1.8, '%.1f')

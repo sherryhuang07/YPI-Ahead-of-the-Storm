@@ -13,11 +13,28 @@ The original stream (55 Connecticut gauges) and well (8 USGS wells) forecasts us
 
 For live forecasts (`scripts/site_rain.py`), each day takes the first available of:
 1. station rain, which NOAA posts 2–4 days late;
-2. PRISM for that day (the drainage-area mean, or the cell at a well);
-3. NOAA NBM, from the newest cycle issued by 7 AM yesterday, so each forecast day is a full 24 hours of forecast;
-4. normal rain, flagged.
+2. PRISM for that day: the drainage-area mean, or the cell at a well. PRISM's grid here covers Connecticut only, so it is used only where at least half the drainage area is inside it.
+3. NOAA NBM, from the newest cycle issued by 7 AM yesterday, so each forecast day is a full 24 hours of forecast.
+4. For past days that stations and PRISM haven't reached yet: the most recent saved NOAA forecast for that day. Each run saves its NOAA values in `data/rain-stations/nbm-archive/` (from November 12, 2026).
+5. Normal rain, flagged.
 
-Yesterday's rain day usually falls to step 4, because NOAA no longer serves the cycle that would cover it.
+If NOAA's station service is busy, the refresh retries, and a batch that keeps failing uses its saved rain.
+
+## Neighboring-state streams (from November 12, 2026)
+
+The 66 neighbouring-state gauges (MA, VT, NH, NY, RI) get the same treatment from a separate rain set, `build_site_rain.py --set regional` (`site-rain-regional.*`). The Connecticut rain set and its frozen v2 models are untouched.
+- **Rain data:** 1,338 stations within about 35 km of the drainage areas, inside 40.4–45.5 N, 76.4–69.6 W. All 66 gauges have NLDI drainage boundaries, every site-day has a value, and the average is 3.5 mm a day.
+- **Model:** `train_streamflow_rain.py --set regional`. It uses the same method, splits and adopt rule as Connecticut v2, compared with each gauge's frozen regional-v1 model. This design was fixed before these test years were looked at.
+
+| Test Jan 2024 – Nov 2026, miss per gauge | Perfect rain | Normal rain | v1 | No change |
+|---|---|---|---|---|
+| Median (cfs) | 49.7 | 64.2 | 66.7 | 82.9 |
+| Mean (cfs) | 311.7 | 383.2 | 388.6 | 556.9 |
+
+- **Gauges:** with perfect rain, v2 beats v1 at 65 of 66 gauges. The exception is the Swift River at West Ware, the Quabbin Reservoir outlet, which follows dam releases, not rain. With normal rain, v2 is no worse at 41 of 66.
+- **Bands:** the 90% band holds the observed flow 95% (normal rain) and 98% (perfect rain) of the time.
+- **Verdict:** it passes the adopt rule.
+- **Live forecasts:** these run in the morning after the regional v1 issue, in `data/regional-streamflow-v2-prospective`, with learning version `regional-streamflow-v2`.
 
 ## Models
 

@@ -9,7 +9,11 @@ Live, for each site and day, the first available of:
   2. PRISM for that day (the grid mean over the drainage area, or the cell at a well)
   3. NOAA NBM forecast from the newest cycle issued at or before 7 AM yesterday (12:00 UTC), so every
      forecast day is a complete 24 hours of forecast; NBM reaches about 10 days
+  3b. for days already past that stations and PRISM have not reached yet: the most recent saved NBM
+     forecast for that day (each run saves its NBM values in data/rain-stations/nbm-archive/<set>/)
   4. normal rain for that site and month (2000-2020 mean), flagged
+PRISM covers Connecticut only, so it is used only where at least half of a drainage area lies inside it.
+Site sets: 'site-rain' (Connecticut gauges and wells) and 'site-rain-regional' (neighboring-state gauges).
 """
 import json
 from datetime import date, datetime, timedelta, timezone
@@ -19,8 +23,8 @@ from statewide_common import ROOT, read
 D = ROOT / 'data/rain-stations'
 
 
-def history():
-    z = np.load(D / 'site-rain.npz', allow_pickle=False)
+def history(name='site-rain'):
+    z = np.load(D / (name + '.npz'), allow_pickle=False)
     start = date.fromisoformat(str(z['start']))
     return {str(i): z['rain'][k] for k, i in enumerate(z['ids'])}, start
 
@@ -61,6 +65,10 @@ def prism_values(sites_meta):
                         from rasterio.warp import transform_geom
                         g = transform_geom('EPSG:4326', src.crs, geom)
                         m = geometry_mask([g], out_shape=arr.shape, transform=src.transform, invert=True)
+                        from shapely.geometry import box as sbox
+                        from rasterio.warp import transform_bounds
+                        poly = shape(geom); crop = sbox(*transform_bounds(src.crs, 'EPSG:4326', *src.bounds))
+                        if poly.intersection(crop).area < 0.5 * poly.area: continue    # mostly outside the PRISM crop
                         if m.any(): masks[s['id']] = m; continue
                     from rasterio.warp import transform
                     xs, ys = transform('EPSG:4326', src.crs, [s['lon']], [s['lat']])
@@ -98,14 +106,27 @@ def nbm_values(sites_meta, today):
     return out, c0.isoformat()
 
 
-def live_series(today, back=120, ahead=15):
+def saved_nbm(name, today):
+    """site -> {day: mm} from earlier runs' saved NBM forecasts (newest forecast for each day wins)."""
+    out = {}
+    for f in sorted((D / 'nbm-archive' / name).glob('*.json')):
+        if f.stem >= str(today): continue
+        for sid, vals in read(f).items(): out.setdefault(sid, {}).update(vals)
+    return out
+
+
+def live_series(today, back=120, ahead=15, name='site-rain'):
     """site -> (array of daily rain for days today-back .. today+ahead-1, list of sources, normals)."""
-    hist, start = history()
-    meta = read(D / 'site-rain.json')['sites']
+    hist, start = history(name)
+    meta = read(D / (name + '.json'))['sites']
     prism = prism_values(meta)
-    try: nbm, cycle = nbm_values(meta, today)
+    try:
+        nbm, cycle = nbm_values(meta, today)
+        arch = D / 'nbm-archive' / name; arch.mkdir(parents=True, exist_ok=True)
+        (arch / (str(today) + '.json')).write_text(json.dumps(nbm), encoding='utf-8')
     except Exception as e:                       # NOAA unreachable: forecasts fall back to "no rain forecast" inputs
         nbm, cycle = {}, 'unavailable (%s)' % type(e).__name__
+    saved = saved_nbm(name, today)
     days = [today - timedelta(days=back) + timedelta(days=k) for k in range(back + ahead)]
     out = {}
     for s in meta:
@@ -118,6 +139,8 @@ def live_series(today, back=120, ahead=15):
             if p is not None and d < today: vals.append(p); src.append('PRISM'); continue
             n = nbm.get(s['id'], {}).get(str(d))
             if n is not None and d >= today - timedelta(days=1): vals.append(n); src.append('NOAA NBM'); continue
+            n = saved.get(s['id'], {}).get(str(d))
+            if n is not None: vals.append(n); src.append('NOAA NBM (saved)'); continue
             vals.append(normal[d.month]); src.append('normal')
         out[s['id']] = dict(days=[str(d) for d in days], rain=np.array(vals), source=src, kind=s['kind'])
     return out, cycle

@@ -100,7 +100,12 @@ $morningJobs = @(
     # Rain-aware Connecticut streams (v2), using this morning's readings and NOAA rain ahead.
     @{ name = 'Connecticut stream gauges v2 (with NOAA rain)'; run = { & $python (Join-Path $root 'scripts\rain_models_daily.py') --kind streamflow } },
     @{ name = 'Neighboring-state stream gauges'; run = { & $python (Join-Path $root 'scripts\regional_daily.py') } },
-    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow streamflow-v2 regional-streamflow } },
+    # Rain-aware neighboring-state streams (v2): refresh their stations' recent rain, then forecast with NOAA rain ahead.
+    @{ name = 'Neighboring-state stream gauges v2 (with NOAA rain)'; run = {
+        & $python (Join-Path $root 'scripts\build_site_rain.py') --set regional --recent
+        if ($LASTEXITCODE -ne 0) { Write-Host 'Regional station rain refresh failed; using rain already saved.' -ForegroundColor Yellow }
+        & $python (Join-Path $root 'scripts\rain_models_daily.py') --kind regional-streamflow } },
+    @{ name = 'Learning versions: Connecticut and neighboring stream gauges'; run = { & $python $learning --models streamflow streamflow-v2 regional-streamflow regional-streamflow-v2 } },
     # DEEP posts the day's fire danger rating before about 8 AM; a morning capture may get it early.
     @{ name = 'DEEP fire danger rating capture'; run = { & $python (Join-Path $root 'scripts\fetch_fire_danger_reports.py') } }
 )

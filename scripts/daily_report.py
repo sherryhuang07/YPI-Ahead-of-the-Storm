@@ -28,7 +28,8 @@ LEDGERS = [
     ('Rain, history average (old baseline)', 'prospective', 'precipitation', 'in', 1 / 25.4),
     ('Streams v2, with NOAA rain', 'streamflow-v2-prospective', 'streamflow', 'cfs', 1),
     ('Streams v1', 'prospective', 'streamflow', 'cfs', 1),
-    ('Neighboring-state streams', 'regional-prospective', 'streamflow', 'cfs', 1),
+    ('Neighboring-state streams v2, with NOAA rain', 'regional-streamflow-v2-prospective', 'streamflow', 'cfs', 1),
+    ('Neighboring-state streams v1', 'regional-prospective', 'streamflow', 'cfs', 1),
     ('Wells v2, with NOAA rain', 'groundwater-v2-prospective', 'groundwater', 'ft', 1),
     ('Wells v1', 'prospective', 'groundwater', 'ft', 1),
     ('Soil moisture', 'root-zone-prospective', 'root-zone', '% water', 100),
@@ -84,8 +85,10 @@ def forecasts(day):
             ', '.join(datetime.fromisoformat(d).strftime('%a %b %d') for d in wet) or 'none in the next 10 days')])
     except Exception as e: rows.append(['Rain (NOAA)', 'not available (%s)' % type(e).__name__])
     # streams and wells: the version the app shows
-    for label, kinds in (('Streams', [('streamflow-v2-prospective', 'v2 with rain'), ('prospective', 'v1')]), ('Wells', [('groundwater-v2-prospective', 'v2 with rain'), ('prospective', 'v1')])):
-        kind = 'streamflow' if label == 'Streams' else 'groundwater'
+    for label, kinds in (('Streams', [('streamflow-v2-prospective', 'v2 with rain'), ('prospective', 'v1')]),
+                         ('Neighboring-state streams', [('regional-streamflow-v2-prospective', 'v2 with rain'), ('regional-prospective', 'v1')]),
+                         ('Wells', [('groundwater-v2-prospective', 'v2 with rain'), ('prospective', 'v1')])):
+        kind = 'groundwater' if label == 'Wells' else 'streamflow'
         r = None
         for folder, tag in kinds:
             r = today_issue(folder, kind, day)

@@ -37,6 +37,7 @@ MODELS = {
     'groundwater': dict(base='data/prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'streamflow': dict(base='data/prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'streamflow-v2': dict(base='data/streamflow-v2-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'regional-streamflow-v2': dict(base='data/regional-streamflow-v2-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'groundwater-v2': dict(base='data/groundwater-v2-prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'regional-streamflow': dict(base='data/regional-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'root-zone': dict(base='data/root-zone-prospective', kind='root-zone', transform='identity', scale=0.01, low=0.0, high=1.0),

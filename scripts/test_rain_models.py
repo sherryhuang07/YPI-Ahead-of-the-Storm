@@ -29,6 +29,19 @@ class RainModelTests(unittest.TestCase):
         vals, note = ahead(r, src, 19, 8, np.array([9.0, 9.0]), 10)     # window reaches a 'normal' day
         self.assertEqual(list(vals), [9.0, 9.0]); self.assertIn('typical', note)
 
+    def test_saved_noaa_forecasts_newest_wins_and_never_from_today(self):
+        import json, tempfile, site_rain
+        from pathlib import Path
+        old = site_rain.D
+        with tempfile.TemporaryDirectory() as t:
+            site_rain.D = Path(t); a = Path(t) / 'nbm-archive' / 'x'; a.mkdir(parents=True)
+            (a / '2026-11-09.json').write_text(json.dumps({'g': {'2026-11-10': 5.0, '2026-11-11': 1.0}}))
+            (a / '2026-11-10.json').write_text(json.dumps({'g': {'2026-11-11': 2.0}}))
+            (a / '2026-11-12.json').write_text(json.dumps({'g': {'2026-11-11': 9.0}}))   # today's own file: ignored
+            got = site_rain.saved_nbm('x', date(2026, 11, 12))
+            site_rain.D = old
+        self.assertEqual(got['g'], {'2026-11-10': 5.0, '2026-11-11': 2.0})
+
     def test_monthly_normal(self):
         start = date(2000, 1, 1); s = np.array([1.0 if (start.toordinal() + i) % 2 else 3.0 for i in range(800)])
         n = normal_by_month(s, start)

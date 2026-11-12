@@ -29,16 +29,20 @@ from statewide_common import ROOT, read, log
 
 D = ROOT / 'data/rain-stations'; RAW = D / 'raw'; BASINS = D / 'basins'
 START = date(2000, 1, 1)
-BOX = (40.6, 42.4, -74.2, -71.3)
 UA = {'User-Agent': 'Connecticut agricultural water forecast research'}
+# Site sets. 'ct' (Connecticut gauges and wells) is frozen with its v2 models; 'regional' (neighboring-state
+# gauges, up to the upper Connecticut River) keeps its own file so the Connecticut inputs never change.
+SETS = {'ct': dict(box=(40.6, 42.4, -74.2, -71.3), registry='data/prospective/model-v1.json', out='site-rain', near_basins=False),
+        'regional': dict(box=(40.4, 45.5, -76.4, -69.6), registry='data/regional-prospective/model-v1.json', out='site-rain-regional', near_basins=True)}
+BOX = SETS['ct']['box']
 
 
-def stations():
-    inv = {}
+def stations(box=None):
+    box = box or BOX; inv = {}
     for line in open(D / 'ghcnd-inventory.txt', encoding='utf-8'):
         sid, lat, lon, el, y0, y1 = line.split()
         lat, lon = float(lat), float(lon)
-        if el == 'PRCP' and int(y1) >= 2000 and BOX[0] <= lat <= BOX[1] and BOX[2] <= lon <= BOX[3]: inv[sid] = (lat, lon, int(y0), int(y1))
+        if el == 'PRCP' and int(y1) >= 2000 and box[0] <= lat <= box[1] and box[2] <= lon <= box[3]: inv[sid] = (lat, lon, int(y0), int(y1))
     return inv
 
 
@@ -74,11 +78,19 @@ def fetch_recent(ids, days=60):
     """Last `days` days for active stations from the NCEI data service (50 stations per request)."""
     end = date.today(); start = end - timedelta(days=days); out = {}
     for k in range(0, len(ids), 50):
-        chunk = ids[k:k + 50]
-        r = requests.get('https://www.ncei.noaa.gov/access/services/data/v1', headers=UA, timeout=300, params=dict(
-            dataset='daily-summaries', stations=','.join(chunk), dataTypes='PRCP', startDate=str(start), endDate=str(end),
-            units='metric', format='json', includeAttributes='true'))
-        r.raise_for_status()
+        chunk = ids[k:k + 50]; r = None
+        # NOAA's service sometimes answers 503 for a while: retry, and skip only a batch that keeps failing.
+        for attempt in range(4):
+            try:
+                r = requests.get('https://www.ncei.noaa.gov/access/services/data/v1', headers=UA, timeout=300, params=dict(
+                    dataset='daily-summaries', stations=','.join(chunk), dataTypes='PRCP', startDate=str(start), endDate=str(end),
+                    units='metric', format='json', includeAttributes='true'))
+                r.raise_for_status(); break
+            except requests.RequestException as e:
+                r = None; print('NOAA station service: %s (attempt %d of 4)' % (type(e).__name__, attempt + 1), flush=True)
+                time.sleep(30 * (attempt + 1))
+        if r is None:
+            print('Skipped %d stations this run; their saved rain is used.' % len(chunk)); continue
         for row in r.json():
             v = row.get('PRCP'); attrs = (row.get('PRCP_ATTRIBUTES') or '').split(',')
             if v in (None, '') or (len(attrs) > 1 and attrs[1].strip()): continue
@@ -95,8 +107,8 @@ def basin(gauge_id):
     return shape(g['features'][0]['geometry'])
 
 
-def sites():
-    reg = read(ROOT / 'data/prospective/model-v1.json'); out = []
+def sites(registry='data/prospective/model-v1.json'):
+    reg = read(ROOT / registry); out = []
     for g in reg['streamflow']:
         out.append(dict(id=g['gauge_id'], kind='streamflow', lon=g['coordinates'][0], lat=g['coordinates'][1]))
     for w in reg['groundwater']:
@@ -109,9 +121,21 @@ def km(lat1, lon1, lat2, lon2):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--recent', action='store_true'); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('--recent', action='store_true'); ap.add_argument('--set', choices=sorted(SETS), default='ct'); a = ap.parse_args()
+    cfg = SETS[a.set]
     RAW.mkdir(parents=True, exist_ok=True); BASINS.mkdir(parents=True, exist_ok=True)
-    inv = stations(); ids = sorted(inv)
+    inv = stations(cfg['box'])
+    site_list = sites(cfg['registry'])
+    if cfg['near_basins']:
+        # Only stations within about 30 km of a drainage area (keeps the download to what is used).
+        from shapely.ops import unary_union
+        shapes = []
+        for s_ in site_list:
+            try: shapes.append(basin(s_['id']))
+            except Exception: shapes.append(Point(s_['lon'], s_['lat']))
+        zone = unary_union([g.buffer(0.35) for g in shapes])
+        inv = {k: v for k, v in inv.items() if zone.contains(Point(v[1], v[0]))}
+    ids = sorted(inv)
     with ThreadPoolExecutor(8) as pool: data = dict(pool.map(fetch_full, ids))
     if a.recent:
         active = [s for s in ids if inv[s][3] >= date.today().year - 1]
@@ -125,7 +149,7 @@ def main():
             if d in index and 0 <= v < 400: S[i, index[d]] = v
     lat = np.array([inv[s][0] for s in ids]); lon = np.array([inv[s][1] for s in ids])
     meta = []; R = np.full((0, len(all_days)), np.nan)
-    for site in sites():
+    for site in site_list:
         if site['kind'] == 'streamflow':
             try:
                 poly = basin(site['id']); c = poly.centroid; buf = poly.buffer(0.05)    # about 5 km
@@ -149,12 +173,12 @@ def main():
                     w = 1 / np.maximum(dist[rep], 1.0) ** 2; series[t] = float(np.sum(w * S[rep, t]) / w.sum())
         R = np.vstack([R, series]); meta.append(dict(site, method=method, stations_inside=int(inside.sum()), stations_within_km=int(len(near)),
                                                     radius_km=radius, days_with_rain=int(np.isfinite(series).sum())))
-    np.savez_compressed(D / 'site-rain.npz', rain=R, start=str(START), ids=np.array([m['id'] for m in meta]))
-    (D / 'site-rain.json').write_text(json.dumps(dict(created_at=datetime.now(timezone.utc).isoformat(), start=str(START), days=len(all_days),
+    np.savez_compressed(D / (cfg['out'] + '.npz'), rain=R, start=str(START), ids=np.array([m['id'] for m in meta]))
+    (D / (cfg['out'] + '.json')).write_text(json.dumps(dict(created_at=datetime.now(timezone.utc).isoformat(), start=str(START), days=len(all_days),
                                                      stations=len(ids), sites=meta), indent=1), encoding='utf-8')
     have = [int(np.isfinite(R[:, k]).sum()) for k in range(len(all_days))]
     last = max(k for k in range(len(all_days)) if have[k] >= 0.8 * len(meta))
-    log('Site rain: %d sites from %d NOAA stations, %s to %s (80%% of sites covered through %s).' % (len(meta), len(ids), all_days[0], all_days[-1], all_days[last]))
+    log('Site rain (' + a.set + '): %d sites from %d NOAA stations, %s to %s (80%% of sites covered through %s).' % (len(meta), len(ids), all_days[0], all_days[-1], all_days[last]))
     print('sites', len(meta), 'stations', len(ids), 'complete through', all_days[last])
 
 
