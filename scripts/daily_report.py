@@ -161,7 +161,8 @@ def learning(since, day):
         s = cfg['scale']; nn = now['n']; trained = nn > 0
         unit = '% flow' if cfg['transform'] == 'log1p' else {'precipitation': 'mm', 'groundwater': 'ft', 'root-zone': 'm³/m³', 'fire-danger': 'classes', 'water-temp': '°C', 'drought': 'index pts'}.get(cfg['kind'], '')
         def nudge(z):
-            v = s * z['w'][..., 0][z['n'] > 0]
+            m = z['n'] > 0; n_ = z['n'][m]
+            v = s * z['w'][..., 0][m] * (n_ / (n_ + L.POLICY.get('evidence_days', 0)))    # as applied (learning-v2 holds back)
             return v * 100 if cfg['transform'] == 'log1p' else v       # log-flow nudge ~ percent
         v = nudge(now)
         lessons_new = int(nn.sum() - (before['n'].sum() if before is not None else 0))
@@ -174,9 +175,11 @@ def learning(since, day):
         after_issue = bool(new_policy) and bool(cur) and read(new_policy[0])['created_at'] > stamp(cur[-1])
         if after_issue:                                  # relearned after today's forecast: report the weights tomorrow will use
             now = np.load(wpath); nn = now['n']; trained = nn > 0; v = nudge(now)
-        relearned = before is not None and before['n'].sum() > 0 and (bool(new_policy) or before['n'].sum() > nn.sum())
+        relearn_policy = [f for f in new_policy if read(f)['version'] == 'learning-v1.1']      # the only policy that relearned
+        relearned = before is not None and before['n'].sum() > 0 and (bool(relearn_policy) or before['n'].sum() > nn.sum())
         if relearned: lessons_new = int(nn.sum())
-        change = ('relearned under %s%s' % (read(new_policy[0])['version'], ' after today\'s forecast; applies from tomorrow' if after_issue else '')) if new_policy else '–'
+        change = ('relearned under %s%s' % (read(relearn_policy[0])['version'], ' after today\'s forecast; applies from tomorrow' if after_issue else '')) if relearn_policy else '–'
+        held = [f for f in glob.glob(str(ROOT / 'data/learning' / name / 'model-v2.json')) if prev and read(f)['created_at'] > stamp(prev[-1])]
         if not cur: change = "today's forecast not issued yet (runs %s)" % ('in the morning part' if cfg['kind'] == 'streamflow' else 'in the night part')
         if cur and trained.any() and (before is None or before['n'].sum() == 0):
             change = 'first lessons'
@@ -187,6 +190,7 @@ def learning(since, day):
                 if j is not None: d.append(s * (now['w'][i, :, 0] - before['w'][j, :, 0]))
             d = np.abs(np.concatenate(d)) * (100 if cfg['transform'] == 'log1p' else 1) if d else np.array([0.0])
             change = 'median %s, largest %s' % (fmt(float(np.median(d[d > 0])) if (d > 0).any() else 0.0, 3), fmt(float(d.max()), 3))
+        if held: change = 'switched to learning-v2 (corrections held back until evidence builds, n/(n+30)); ' + change
         c = ro(ROOT / 'data/learning' / name / 'ledger.sqlite')
         comp = '–'
         if c is not None:
@@ -198,8 +202,8 @@ def learning(since, day):
         rows.append([name, '{:,}'.format(lessons_new) + (' (relearned)' if relearned else ''), '{:,}'.format(int(nn.sum())),
                      ('%s median, %s mean, %s largest' % (fmt(float(np.median(v)), 3), fmt(float(np.mean(v)), 3), fmt(float(np.max(np.abs(v))), 3))) if trained.any() else 'no lessons yet',
                      change, unit, comp])
-    return dict(title='Learning versions: what changed since yesterday', table=dict(head=['Learning version', 'New lessons', 'Total lessons', 'Correction now (nudge)', 'Change since yesterday', 'Nudge units', 'Newly scored: learning vs original (average miss)'], rows=rows),
-                notes=['A lesson is one scored comparison of the original forecast with what was measured. The nudge is the typical amount the learning version now adds to (or, if negative, subtracts from) the original; for streams it is a percentage of flow.',
+    return dict(title='Learning versions: what changed since yesterday', table=dict(head=['Learning version', 'New lessons', 'Total lessons', 'Correction applied now', 'Change since yesterday', 'Nudge units', 'Newly scored: learning vs original (average miss)'], rows=rows),
+                notes=['A lesson is one scored comparison of the original forecast with what was measured. The correction is the typical amount the learning version now adds to (or, if negative, subtracts from) the original, as applied: since learning-v2 it is held back to n/(n+30) of what was learned, n = scored days. For streams it is a percentage of flow.',
                        'Learning forecasts are compared with the frozen originals on exactly the same cases. Early on they are usually identical, because corrections only affect forecasts made after the lessons.'])
 
 

@@ -31,7 +31,8 @@ class LearningTests(unittest.TestCase):
         # The original is always 0.4 ft too shallow at well a, forecast day 3.
         c = ledger([('s%d' % k, 'groundwater', 'a', '2026-11-%02d' % (k + 1), 3, 10.0, 10.4, ) for k in range(40)])
         w = Weights(self.path); self.assertEqual(train(w, c, 'groundwater', self.cfg), 40)
-        self.assertAlmostEqual(w.apply('a', 3, 10.0, self.cfg['scale']), 10.4, delta=0.05)  # cautious start: ~90%+ after 40 days
+        # learned ~0.4 ft, applied at strength 40/(40+30)
+        self.assertAlmostEqual(w.apply('a', 3, 10.0, self.cfg['scale']), 10.0 + 0.4 * 40 / 70, delta=0.03)
         self.assertEqual(w.apply('a', 4, 10.0, self.cfg['scale']), 10.0)   # other forecast days untouched
         self.assertEqual(w.apply('b', 3, 10.0, self.cfg['scale']), 10.0)   # other locations untouched
 
@@ -47,6 +48,12 @@ class LearningTests(unittest.TestCase):
         c = ledger([('s', 'streamflow', 'a', '2026-11-04', 1, 10.0, 99.0)])
         w = Weights(self.path); self.assertEqual(train(w, c, 'groundwater', self.cfg), 0)
 
+    def test_one_storm_barely_moves_the_forecast(self):
+        # Three days of a 30% under-forecast (one storm) apply at strength 3/33, about 9%.
+        c = ledger([('s%d' % k, 'groundwater', 'a', '2026-11-%02d' % (k + 1), 1, 10.0, 13.0) for k in range(3)])
+        w = Weights(self.path); train(w, c, 'groundwater', self.cfg)
+        self.assertLess(w.apply('a', 1, 10.0, self.cfg['scale']) - 10.0, 0.3)
+
     def test_rain_storm_lesson_is_capped(self):
         # One 66 mm storm day against a 3 mm forecast teaches at most 5 mm (one scale unit), not 63 mm.
         cfg = MODELS['precipitation']
@@ -61,7 +68,7 @@ class LearningTests(unittest.TestCase):
         c = ledger([('s%d' % k, 'streamflow', 'g', '2026-11-%02d' % (k + 1), 1, 100.0, 50.0) for k in range(60)])
         w = Weights(self.path); train(w, c, 'streamflow', cfg)
         y = learned_rows(dict(forecasts=[dict(id='g', dates=['d'], prediction=[100.0])]), w, cfg)[0]['prediction'][0]
-        self.assertTrue(45 < y < 60)   # learned the halving in log space
+        self.assertTrue(55 < y < 70)   # learned the halving in log space, applied at strength 60/90
         rz = MODELS['root-zone']; w2 = Weights(Path(self.dir.name) / 'r.npz')
         train(w2, ledger([('s%d' % k, 'root-zone', 'r', '2026-11-%02d' % (k + 1), 1, .98, 1.0) for k in range(60)]), 'root-zone', rz)
         self.assertLessEqual(learned_rows(dict(forecasts=[dict(id='r', dates=['d'], prediction=[.99])]), w2, rz)[0]['prediction'][0], 1.0)

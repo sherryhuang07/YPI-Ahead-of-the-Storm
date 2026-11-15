@@ -56,6 +56,17 @@ if ($Scheduled -and -not $Force -and (Test-Path -LiteralPath $summaryPath)) {
         }
     } catch { Write-Host 'Could not read the previous run summary; running anyway.' }
 }
+# Keep the computer from going to sleep while this run works (found November 14, 2026: the laptop slept
+# mid-run, the run froze for 28 hours holding the lock, and no forecasts were sealed that day). This is a
+# request from this process only (Windows SetThreadExecutionState); it ends when the run ends and changes
+# no power settings. It cannot stop a closed lid or a battery-saving hibernation.
+try {
+    Add-Type -Namespace AheadOfTheStorm -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);' -ErrorAction Stop
+    [void][AheadOfTheStorm.Power]::SetThreadExecutionState([uint32]2147483649)   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+} catch { Write-Host 'Could not ask Windows to stay awake during this run.' -ForegroundColor Yellow }
+# If the Connecticut date changes during the run (e.g. the computer was asleep), remaining steps are skipped:
+# they would seal forecasts for the wrong day. The run is marked failed, so a retry runs them for the new day.
+$runDay = $ctNow.Date
 $prospective = Join-Path $root 'scripts\prospective_daily.py'
 $learning = Join-Path $root 'scripts\learning_daily.py'
 $nightJobs = @(
@@ -119,13 +130,23 @@ try {
         Write-Host ''
         Write-Host ('=== ' + $job.name + ' ===') -ForegroundColor Cyan
         $started = (Get-Date).ToUniversalTime()
+        $dayNow = ([System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Eastern Standard Time')).Date
+        if ($dayNow -ne $runDay) {
+            $status = 'skipped: the date changed during this run (computer asleep?); a retry runs it for the new day'
+            Write-Host ($job.name + ': ' + $status) -ForegroundColor Yellow
+            $results += [pscustomobject]@{ job = $job.name; started_at = $started.ToString('o'); exit_code = 3; status = $status }
+            continue
+        }
         try { & $job.run; $code = $LASTEXITCODE } catch { Write-Host $_.Exception.Message -ForegroundColor Red; $code = 1 }
         if ($null -eq $code) { $code = 0 }
         $status = if ($code -eq 0) { 'ok' } else { 'failed (exit ' + $code + ')' }
         Write-Host ($job.name + ': ' + $status) -ForegroundColor $(if ($code -eq 0) { 'Green' } else { 'Yellow' })
         $results += [pscustomobject]@{ job = $job.name; started_at = $started.ToString('o'); exit_code = $code; status = $status }
     }
-} finally { Pop-Location }
+} finally {
+    Pop-Location
+    try { [void][AheadOfTheStorm.Power]::SetThreadExecutionState([uint32]2147483648) } catch { }   # ES_CONTINUOUS: allow sleep again
+}
 $summary = [pscustomobject]@{ completed_at = (Get-Date).ToUniversalTime().ToString('o'); part = $Part; jobs = $results }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root ('outputs\daily-run-summary-' + $Part + '.json')) -Encoding utf8
 # Daily report (outputs/daily-reports/<date>.md): today's forecasts, newly scored comparisons and learning

@@ -47,9 +47,12 @@ MODELS = {
     'drought-v2': dict(base='data/drought-v2-prospective', kind='drought', transform='identity', scale=10.0, low=0.0, high=500.0),
 }
 LEADS = 14
-POLICY = dict(version='learning-v1', forgetting=0.99, prior_variance=[0.25, 0.25], slope_limit=0.5,
+POLICY = dict(version='learning-v2', forgetting=0.99, prior_variance=[0.25, 0.25], slope_limit=0.5, evidence_days=30,
               rule='Recursive least squares on (observed - original) per location and forecast day, in units of the '
-                   "model's scale; weights start at zero; slope clipped to +/-0.5 when applied; originals never change.")
+                   "model's scale; weights start at zero; slope clipped to +/-0.5 when applied; originals never change. "
+                   'learning-v2 (from 2026-11-15): the learned correction is applied at strength n/(n+30), n = scored days '
+                   'for that location and forecast day, so one weather event cannot swing it (learning-v1 applied it in full '
+                   'from the first lesson and, in the first week, learned that week\'s storm as if it were a lasting bias).')
 
 
 def fwd(v, t): return np.log1p(np.maximum(v, 0)) if t == 'log1p' else np.asarray(v, float)
@@ -92,7 +95,8 @@ class Weights:
         if loc not in self.index: return pred_t
         i = self.index[loc]; w0, w1 = self.w[i, lead - 1]
         w1 = float(np.clip(w1, -POLICY['slope_limit'], POLICY['slope_limit']))
-        return pred_t + scale * w0 + w1 * (pred_t - self.ref[i])
+        n = int(self.n[i, lead - 1]); strength = n / (n + POLICY['evidence_days'])     # hold back until evidence builds up
+        return pred_t + strength * (scale * w0 + w1 * (pred_t - self.ref[i]))
 
     def save(self, path):
         tmp = path.with_suffix('.tmp.npz')
@@ -129,7 +133,7 @@ def learned_rows(record, weights, cfg):
 
 
 def version(cfg):
-    return 'learning-v1.1' if cfg.get('error_cap') is not None else 'learning-v1'
+    return POLICY['version']        # learning-v2 for every model (rain models also cap each lesson; see error_cap)
 
 
 def run_model(name, root_out=None):
@@ -146,14 +150,13 @@ def run_model(name, root_out=None):
     ver = version(cfg); registry = p.D / ('model-%s.json' % ver.split('-')[-1])
     weights_path = p.D / 'weights.npz'
     if not registry.exists():
-        if ver != 'learning-v1' and weights_path.exists():
-            # New policy: keep the old weights for the record and relearn from every comparison scored so far
-            # (all were observed before now, so nothing looks ahead).
-            weights_path.replace(p.D / 'weights-learning-v1.npz')
+        # learning-v2 keeps the learned weights (no relearning); only how strongly they are applied changes.
+        # (The 2026-11-11 rain cap, learning-v1.1, did relearn: its old weights are in weights-learning-v1.npz.)
         p.exclusive(registry, dict(created_at=p.utc().isoformat(), model=name, base_ledger=cfg['base'], kind=kind,
                                    transform=cfg['transform'], scale=cfg['scale'], **dict(POLICY, version=ver),
                                    error_cap=cfg.get('error_cap'),
-                                   **({'replaces': 'learning-v1 (uncapped: one storm taught every location to add ~2-3 mm/day)'} if ver != 'learning-v1' else {})))
+                                   replaces='learning-v1/v1.1: corrections applied in full from the first lesson; in the first week they '
+                                            'made Connecticut streams 41% and rain 22% worse than the originals'))
     weights = Weights(weights_path)
     trained = train(weights, base, kind, cfg); weights.save(weights_path)
     status = dict(model=name, trained_on_new_comparisons=trained, total_comparisons_learned=int(weights.n.sum()), last_comparison_row=weights.mark)
