@@ -207,6 +207,27 @@ def learning(since, day):
                        'Learning forecasts are compared with the frozen originals on exactly the same cases. Early on they are usually identical, because corrections only affect forecasts made after the lessons.'])
 
 
+def reasoning(day):
+    """How the weather-aware learning versions (learning-v3) reasoned about today's forecasts."""
+    import learning_daily as L
+    rows = []; examples = []
+    for name in L.RAIN_CONTEXT:
+        files = sorted(glob.glob(str(ROOT / 'outputs/learning' / name / 'issued' / day / '*.json')))
+        r = read(files[-1]) if files else None
+        if not r or not any('reasoning' in f for f in r['forecasts']):
+            rows.append([name, 'not yet (weather-aware from tomorrow\'s forecasts)' if r else 'not issued yet today', '', '', '']); continue
+        notes = [(f['id'], d, n) for f in r['forecasts'] for d, n in zip(f['dates'], f.get('reasoning', []))]
+        wet = sum(n.startswith('wet') for _, _, n in notes); dry = sum(n.startswith('dry') for _, _, n in notes)
+        checks = [(i, d, n) for i, d, n in notes if 'gut-check' in n]
+        rows.append([name, '%d site-days' % len(notes), '%d wetter than normal' % wet, '%d drier than normal' % dry, '%d adjusted' % len(checks)])
+        examples += ['%s: %s, %s — %s' % (name, i, d, n.split('gut-check ')[1]) for i, d, n in checks[:3]]
+    return dict(title='Reasoning with the weather (streams and wells learning versions)',
+                table=dict(head=['Learning version', 'Forecast days reasoned', 'Used wet-weather correction', 'Used dry-weather correction', 'Gut-check'], rows=rows),
+                notes=['Each stream and well learning version keeps separate corrections for weather wetter or drier than normal (rain over the 3 days before the last reading and the days to the target, within NOAA\'s 10-day reach) and uses the one matching NOAA\'s forecast. '
+                       'A gut-check from each site\'s own 2000-2023 history then stops a rise during a dry stretch (under 3 mm) or a fall during a soaking (25 mm or more) that goes beyond what that site did in 99% of such stretches.']
+                + (['Gut-check examples: ' + '; '.join(examples)] if examples else []))
+
+
 def to_markdown(rep):
     out = ['# Daily forecast report: %s' % datetime.fromisoformat(rep['date']).strftime('%A, %B %d, %Y'), '', '_Generated %s (Connecticut time)._' % rep['generated_local'], '']
     for s in rep['sections']:
@@ -225,7 +246,7 @@ def main():
     earlier = [v for k, v in state.items() if k < day]
     since = max(earlier) if earlier else (now - timedelta(hours=24)).isoformat()
     rep = dict(date=day, generated_at=now.isoformat(), generated_local=now.astimezone(p.LOCAL).strftime('%B %d, %Y %I:%M %p'), scored_since=since,
-               sections=[run_status(day), forecasts(day), scored(since), learning(since, day)])
+               sections=[run_status(day), forecasts(day), scored(since), learning(since, day), reasoning(day)])
     save(OUT / (day + '.json'), rep); (OUT / (day + '.md')).write_text(to_markdown(rep), encoding='utf-8')
     save(OUT / 'latest.json', dict(date=day, json='outputs/daily-reports/%s.json' % day, markdown='outputs/daily-reports/%s.md' % day, generated_at=rep['generated_at']))
     state[day] = rep['generated_at']; save(state_path, state)

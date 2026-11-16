@@ -110,13 +110,20 @@ def nbm_weather(points, not_after=None):
     from fetch_noaa_precip import locate, BASE, USER
     day, cycle, files, _ = locate(not_after=not_after); c0 = datetime.strptime(day + cycle, '%Y%m%d%H').replace(tzinfo=timezone.utc)
     hours = sorted({int(re.search(r'f(\d{3})', f).group(1)) for f in files if 1 <= int(re.search(r'f(\d{3})', f).group(1)) <= 264})
-    folder = FD / 'nbm' / (day + cycle + 'z'); folder.mkdir(parents=True, exist_ok=True); grids = {}
+    # Download a box that covers every requested point (the Connecticut box, widened when points lie outside it).
+    # Until 2026-11-15 the box was always Connecticut's, and points outside it read as 0 mm: neighboring-state
+    # gauges north of about 42.5 N were given "no rain" forecasts.
+    lats = [p[0] for p in points.values()]; lons = [p[1] for p in points.values()]
+    box = dict(leftlon=min(-74.0, float(np.floor(min(lons) - 0.3))), rightlon=max(-71.0, float(np.ceil(max(lons) + 0.3))),
+               toplat=max(42.2, float(np.ceil(max(lats) + 0.3))), bottomlat=min(40.9, float(np.floor(min(lats) - 0.3))))
+    tag = '' if box == dict(leftlon=-74.0, rightlon=-71.0, toplat=42.2, bottomlat=40.9) else '-%g_%g_%g_%g' % (box['leftlon'], box['rightlon'], box['bottomlat'], box['toplat'])
+    folder = FD / 'nbm' / (day + cycle + 'z' + tag); folder.mkdir(parents=True, exist_ok=True); grids = {}
     for h in hours:
         path = folder / ('f%03d.grib2' % h)
         if not path.exists():
             r = requests.get(BASE + '/cgi-bin/filter_blend.pl', headers=USER, timeout=90, params=dict(
                 file='blend.t%sz.core.f%03d.co.grib2' % (cycle, h), dir='/blend.%s/%s/core' % (day, cycle), var_TMP='on', var_DPT='on', var_WIND='on',
-                var_APCP='on', lev_2_m_above_ground='on', lev_10_m_above_ground='on', lev_surface='on', subregion='', leftlon=-74, rightlon=-71, toplat=42.2, bottomlat=40.9))
+                var_APCP='on', lev_2_m_above_ground='on', lev_10_m_above_ground='on', lev_surface='on', subregion='', **box))
             if not r.content.startswith(b'GRIB'): raise RuntimeError('NBM filter did not return GRIB for hour %d' % h)
             path.write_bytes(r.content)
         grids[h] = path
@@ -124,11 +131,13 @@ def nbm_weather(points, not_after=None):
     for h, path in grids.items():
         with rasterio.open(path) as s:
             xs, ys = transform('EPSG:4326', s.crs, [p[1] for p in points.values()], [p[0] for p in points.values()])
+            inside = [s.bounds.left <= x <= s.bounds.right and s.bounds.bottom <= y <= s.bounds.top for x, y in zip(xs, ys)]
             for i in range(1, s.count + 1):
                 t = s.tags(i); el = str(t.get('GRIB_ELEMENT', '')); end = datetime.fromtimestamp(int(t['GRIB_VALID_TIME']), timezone.utc)
                 if 'stddev' in str(t.get('GRIB_COMMENT', '')) or 'stddev' in str(t.get('GRIB_SHORT_NAME', '')): continue
                 vals = [float(v[0]) for v in s.sample(list(zip(xs, ys)), indexes=i)]
-                for name, v in zip(points, vals):
+                for name, v, ok in zip(points, vals, inside):
+                    if not ok: continue                         # outside the file: no forecast, never "0"
                     if el in ('T', 'Td', 'WindSpd'): wx[(name, end)][el] = v
                     m = re.fullmatch(r'QPF(\d+)', el)
                     if m: qpf[(name, end)][int(m.group(1))] = v

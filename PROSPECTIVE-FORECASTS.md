@@ -50,6 +50,22 @@ Each original model keeps its frozen weights, so its prospective score stays a f
 - **learning-v2 (from November 15, 2026):** each learned correction is applied at strength n/(n+30), where n is the number of scored days for that location and forecast day. That is about 9% after 3 days, 50% after 30 and 75% after 90. The weights are still learned every day, and none were relearned.
   - **Why:** in the first week, corrections applied in full from the first lesson took that week's storm for a lasting bias. Connecticut streams learning was 41% worse than its original (81.7 vs 57.8 cfs, 1,225 cases). Rain learning was 22% worse.
   - **Effect on day one:** the typical stream correction fell from about 7.9% to 0.7% of flow.
+- **learning-v3 for streams and wells (from November 15, 2026): reasoning with the weather.** The six stream and well learning versions keep **separate corrections for weather wetter and drier than normal**. "Normal" means the site's 2000–2020 rain for that month, over the 3 days before the last reading plus the days to the target, within NOAA's 10-day reach. Lessons are filed under the weather that actually happened; each new forecast uses the correction matching the rain NOAA forecasts (`learning_daily.RainContext`), so a correction learned in a storm no longer pushes forecasts up in a dry spell. A **gut-check** follows (`scripts/reasoning_rules.py`, `outputs/reasoning/rules.json`). From each site's own history (streams before 2024, wells before 2023):
+  - In a dry stretch (under 3 mm), no forecast may rise more than the site did in 99% of such stretches.
+  - In a soaking (25 mm or more), none may fall more than it did in 99% of them.
+  - On the test years these rules changed 0.4–0.7% of v1 forecasts and cut the error of the ones they changed by 18–29% (dry caps).
+  - **Notes:** each learning forecast records, per day, the weather it assumed and any gut-check. The daily report summarises them.
+  - **Replay of the live record** (`scripts/evaluate_learning_policies.py`, `outputs/reasoning/policy-replay.json`). Each forecast could use only lessons scored before it was issued. The table shows average miss.
+
+    | Average miss | Original | v1 | v2 | v3 |
+    |---|---|---|---|---|
+    | Connecticut streams (cfs) | 68.77 | 76.70 | 69.22 | **68.85** |
+    | Neighboring-state streams (cfs) | 95.80 | 96.41 | 95.71 | **95.66** |
+    | Wells (ft) | 0.237 | 0.237 | 0.236 | 0.236 |
+
+    Before November 12 no NOAA forecast was saved for each site, so the replay used the rain that fell, which flatters v3 a little.
+  - **Relearning:** the six were relearned from all scored comparisons, and their learning-v2 weights are kept. A first draft split wet from dry at a fixed 5 mm. That nearly always read "wet" over long windows, so it was set aside (`*-draft-5mm-split.*`, never used for a sealed forecast) in favour of "compared with normal".
+- **NOAA rain outside Connecticut (fixed November 15, 2026).** NOAA's file was always downloaded for a Connecticut-sized box, and a point outside it read as 0 mm. So neighboring-state gauges north of about 42.5 N had "no rain" forecasts in their sealed v2 forecasts of November 12–15. The download box now covers every requested point, and a point outside the file counts as "no forecast", never 0.
 - Learning runs at the end of each part: night for precipitation, groundwater and root-zone; morning for both streamflow models. Until comparisons are scored (a day or more for wells and gauges, about four days for NASA soil moisture, PRISM's delay for rain), learning forecasts equal the originals.
 - Farmer View option 11 shows both. A learning version should replace an original only after it has beaten it on enough scored, non-overlapping periods; that decision is not automated.
 

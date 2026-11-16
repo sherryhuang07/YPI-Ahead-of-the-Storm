@@ -4,7 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 import numpy as np
-from learning_daily import Weights, train, learned_rows, MODELS
+from learning_daily import Weights, train, learned_rows, MODELS, RainContext, WET_SPLIT
+
+
+def plain(name):
+    """Model settings without live weather context (these tests check the learning arithmetic)."""
+    return {k: v for k, v in MODELS[name].items() if k not in ('rain_set', 'rules', 'context')}
 
 
 def ledger(rows):
@@ -18,7 +23,7 @@ def ledger(rows):
 class LearningTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory(); self.path = Path(self.dir.name) / 'w.npz'
-        self.cfg = MODELS['groundwater']
+        self.cfg = plain('groundwater')
 
     def tearDown(self): self.dir.cleanup()
 
@@ -54,6 +59,25 @@ class LearningTests(unittest.TestCase):
         w = Weights(self.path); train(w, c, 'groundwater', self.cfg)
         self.assertLess(w.apply('a', 1, 10.0, self.cfg['scale']) - 10.0, 0.3)
 
+    def test_dry_and_wet_corrections_are_kept_apart(self):
+        # Storm lessons filed under 'wet' must not move a dry-weather forecast.
+        c = ledger([('s%d' % k, 'groundwater', 'a|wet', '2026-11-%02d' % (k + 1), 1, 10.0, 12.0) for k in range(20)])
+        w = Weights(self.path); train(w, c, 'groundwater', self.cfg)
+        self.assertEqual(w.apply('a|dry', 1, 10.0, self.cfg['scale']), 10.0)
+        self.assertGreater(w.apply('a|wet', 1, 10.0, self.cfg['scale']), 10.5)
+        self.assertEqual(RainContext.regime(WET_SPLIT - 0.1), 'dry'); self.assertEqual(RainContext.regime(WET_SPLIT), 'wet')
+        self.assertEqual(RainContext.regime(None), 'dry')
+
+    def test_gut_check_caps_a_dry_rise_and_a_wet_fall(self):
+        from reasoning_rules import guard
+        rule = dict(dry_rise=1.10, wet_floor=0.80)
+        self.assertAlmostEqual(guard(150.0, 100.0, rule, 1.0, 'streamflow')[0], 110.0, delta=0.1)      # dry: at most +10%
+        self.assertAlmostEqual(guard(50.0, 100.0, rule, 40.0, 'streamflow')[0], 80.0, delta=0.1)       # wet: at most -20%
+        self.assertEqual(guard(105.0, 100.0, rule, 1.0, 'streamflow'), (105.0, None))                  # plausible: unchanged
+        self.assertEqual(guard(150.0, 100.0, rule, 10.0, 'streamflow'), (150.0, None))                 # in between: no rule
+        well = dict(dry_rise=-0.2, wet_floor=0.3)                                                       # depth below ground
+        self.assertAlmostEqual(guard(9.0, 10.0, well, 0.0, 'groundwater')[0], 9.8)                      # dry: water up at most 0.2 ft
+
     def test_rain_storm_lesson_is_capped(self):
         # One 66 mm storm day against a 3 mm forecast teaches at most 5 mm (one scale unit), not 63 mm.
         cfg = MODELS['precipitation']
@@ -64,7 +88,7 @@ class LearningTests(unittest.TestCase):
         self.assertLess(capped, 1.5); self.assertGreater(w2.apply('f', 1, 3.0, cfg['scale']) - 3.0, 5 * capped)
 
     def test_bounds_and_log_space(self):
-        cfg = MODELS['streamflow']
+        cfg = plain('streamflow')
         c = ledger([('s%d' % k, 'streamflow', 'g', '2026-11-%02d' % (k + 1), 1, 100.0, 50.0) for k in range(60)])
         w = Weights(self.path); train(w, c, 'streamflow', cfg)
         y = learned_rows(dict(forecasts=[dict(id='g', dates=['d'], prediction=[100.0])]), w, cfg)[0]['prediction'][0]

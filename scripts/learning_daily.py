@@ -22,8 +22,10 @@ prospective_daily.py's sealing, hashing and scoring rules.
     learning_daily.py --models streamflow regional-streamflow           (morning)
 """
 import argparse
+import glob
 import json
 import sqlite3
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import numpy as np
 import prospective_daily as p
@@ -46,6 +48,20 @@ MODELS = {
     'drought': dict(base='data/drought-prospective', kind='drought', transform='identity', scale=10.0, low=0.0, high=500.0),
     'drought-v2': dict(base='data/drought-v2-prospective', kind='drought', transform='identity', scale=10.0, low=0.0, high=500.0),
 }
+# learning-v3 (from 2026-11-15) for streams and wells: corrections are kept separately for DRY and WET weather
+# (rain over the 3 days up to the last reading plus the days to the target, within NOAA's 10-day reach,
+# below or at least the site's normal rain for those days and that month), learned under the weather that actually happened and applied under the weather
+# NOAA forecasts; then a gut-check from each site's own history (outputs/reasoning/rules.json) caps a rise
+# in a dry stretch or a fall in a wet one. Context comes from the sealed rain of the matching v2 forecast.
+RAIN_CONTEXT = {'streamflow': ('site-rain', 'streamflow', 'data/streamflow-v2-prospective'),
+                'streamflow-v2': ('site-rain', 'streamflow', 'data/streamflow-v2-prospective'),
+                'regional-streamflow': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v2-prospective'),
+                'regional-streamflow-v2': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v2-prospective'),
+                'groundwater': ('site-rain', 'groundwater', 'data/groundwater-v2-prospective'),
+                'groundwater-v2': ('site-rain', 'groundwater', 'data/groundwater-v2-prospective')}
+for _m, (_set, _rules, _ctx) in RAIN_CONTEXT.items(): MODELS[_m].update(rain_set=_set, rules=_rules, context=_ctx)
+WET_SPLIT = 1.0     # wet = at least normal rain for the window (ratio to the site's 2000-2020 monthly mean)
+RAIN_HORIZON = 10
 LEADS = 14
 POLICY = dict(version='learning-v2', forgetting=0.99, prior_variance=[0.25, 0.25], slope_limit=0.5, evidence_days=30,
               rule='Recursive least squares on (observed - original) per location and forecast day, in units of the '
@@ -95,7 +111,7 @@ class Weights:
         if loc not in self.index: return pred_t
         i = self.index[loc]; w0, w1 = self.w[i, lead - 1]
         w1 = float(np.clip(w1, -POLICY['slope_limit'], POLICY['slope_limit']))
-        n = int(self.n[i, lead - 1]); strength = n / (n + POLICY['evidence_days'])     # hold back until evidence builds up
+        n = int(self.n[i, lead - 1]); strength = n / (n + POLICY['evidence_days']) if n else 0.0     # hold back until evidence builds up
         return pred_t + strength * (scale * w0 + w1 * (pred_t - self.ref[i]))
 
     def save(self, path):
@@ -104,36 +120,118 @@ class Weights:
         tmp.replace(path)
 
 
+class RainContext:
+    """Rain around each site, for reasoning about the weather a forecast was made in.
+
+    observed(): what fell (station history, then PRISM-free saved NOAA forecasts for days stations
+    have not reached), used to file a lesson under the weather that actually happened.
+    forecast(): the rain sealed with the matching v2 forecast of that issue day (stations + NOAA ahead),
+    used when applying a correction. Days are 7 AM-7 AM rain days, as in site_rain.
+    """
+    def __init__(self, cfg):
+        from site_rain import history as rain_history, saved_nbm
+        self.hist, self.start = rain_history(cfg['rain_set'])
+        self.saved = saved_nbm(cfg['rain_set'], date.today() + timedelta(days=1))
+        self.sealed = {}
+        for f in glob.glob(str(ROOT / cfg['context'] / 'snapshots' / '*' / 'inputs.json')):
+            s = read(f)
+            if 'rain' not in s: continue
+            day = str(datetime.fromisoformat(s['captured_at']).astimezone(p.LOCAL).date())
+            for sid, v in s['rain'].items(): self.sealed[(day, sid)] = dict(zip(v['days'], v['mm']))
+        self.rules = read(ROOT / 'outputs/reasoning/rules.json')['sets'][cfg['rules']]['rules'] if (ROOT / 'outputs/reasoning/rules.json').exists() else {}
+        from site_rain import normal_by_month
+        self._normal = {}; self._nbm = normal_by_month
+
+    def normal(self, sid, month):
+        if sid not in self._normal: self._normal[sid] = self._nbm(self.hist[sid], self.start) if sid in self.hist else {}
+        return self._normal[sid].get(month)
+
+    def _day(self, sid, d, issue_day=None):
+        if issue_day is not None:
+            v = self.sealed.get((issue_day, sid), {}).get(str(d))
+            if v is not None: return v
+        h = self.hist.get(sid); k = (d - self.start).days
+        if h is not None and 0 <= k < len(h) and np.isfinite(h[k]): return float(h[k])
+        return self.saved.get(sid, {}).get(str(d))
+
+    def total(self, sid, last_day, target_day, issue_day=None):
+        """Rain over the 3 days up to the last reading + days to the target (NOAA reach); None if unknown."""
+        last = date.fromisoformat(last_day); n = min((date.fromisoformat(target_day) - last).days, RAIN_HORIZON)
+        vals = [self._day(sid, last + timedelta(days=k), issue_day) for k in range(-2, n + 1)]
+        return None if any(v is None for v in vals) else float(sum(vals))
+
+    def ratio(self, sid, last_day, target_day, issue_day=None):
+        """(rain total, its ratio to normal for the same days and month), or (None, None)."""
+        t = self.total(sid, last_day, target_day, issue_day)
+        if t is None: return None, None
+        last = date.fromisoformat(last_day); n = min((date.fromisoformat(target_day) - last).days, RAIN_HORIZON) + 3
+        nm = self.normal(sid, last.month)
+        return t, (t / (nm * n) if nm else None)
+
+    @staticmethod
+    def regime(ratio): return 'wet' if ratio is not None and ratio >= WET_SPLIT else 'dry'
+
+
+def lesson_keys(base, kind, cfg, rows):
+    """For rain-aware models: file each lesson under loc|dry or loc|wet by the rain that actually fell."""
+    ctx = RainContext(cfg); paths = {s: pth for s, pth in base.execute('SELECT sha256, path FROM forecasts')}; last = {}
+    out = {}
+    for rowid, sha, loc, day, lead in rows:
+        if (sha, loc) not in last:
+            for f in read(ROOT / paths[sha])['forecasts']: last[(sha, f['id'])] = f.get('source_last_day')
+        ld = last.get((sha, loc))
+        out[rowid] = '%s|%s' % (loc, RainContext.regime(ctx.ratio(loc, ld, day)[1] if ld else None))
+    return out
+
+
 def train(weights, base, kind, cfg):
     """Apply every comparison scored in the original ledger since the last run, oldest first."""
-    rows = base.execute('SELECT rowid,location,lead,predicted,observed FROM scores WHERE variable=? AND rowid>? '
+    rows = base.execute('SELECT rowid,location,lead,predicted,observed,forecast_sha,day FROM scores WHERE variable=? AND rowid>? '
                         'ORDER BY day,lead,rowid', (kind, weights.mark)).fetchall()
+    keys = lesson_keys(base, kind, cfg, [(r[0], r[5], r[1], r[6], r[2]) for r in rows]) if cfg.get('rain_set') and rows else {}
     refs = {}
-    for _, loc, _, pred, _ in rows: refs.setdefault(loc, float(fwd(pred, cfg['transform'])))
+    for rowid, loc, _, pred, _, _, _ in rows: refs.setdefault(keys.get(rowid, loc), float(fwd(pred, cfg['transform'])))
     weights.ensure(refs)
-    for rowid, loc, lead, pred, obs in rows:
-        weights.update(loc, int(lead), float(fwd(pred, cfg['transform'])), float(fwd(obs, cfg['transform'])), cfg['scale'], cfg.get('error_cap'))
+    for rowid, loc, lead, pred, obs, _, _ in rows:
+        weights.update(keys.get(rowid, loc), int(lead), float(fwd(pred, cfg['transform'])), float(fwd(obs, cfg['transform'])), cfg['scale'], cfg.get('error_cap'))
         weights.mark = max(weights.mark, rowid)
     return len(rows)
 
 
-def learned_rows(record, weights, cfg):
+def learned_rows(record, weights, cfg, issue_day=None):
+    from reasoning_rules import guard
+    ctx = RainContext(cfg) if cfg.get('rain_set') else None
     rows = []
     for r in record['forecasts']:
-        frozen = np.array(r['prediction'], float); out = []
+        frozen = np.array(r['prediction'], float); out = []; notes = []
         for lead, v in enumerate(frozen, 1):
-            y = inv(weights.apply(r['id'], lead, float(fwd(v, cfg['transform'])), cfg['scale']), cfg['transform'])
+            key = r['id']; note = None
+            if ctx is not None and r.get('source_last_day'):
+                # Reason with the weather: use the correction learned in the same kind of weather NOAA expects.
+                total, ratio = ctx.ratio(r['id'], r['source_last_day'], r['dates'][lead - 1], issue_day)
+                key = '%s|%s' % (r['id'], RainContext.regime(ratio))
+            y = inv(weights.apply(key, lead, float(fwd(v, cfg['transform'])), cfg['scale']), cfg['transform'])
             if cfg['low'] is not None: y = max(cfg['low'], y)
             if cfg['high'] is not None: y = min(cfg['high'], y)
+            if ctx is not None and r.get('source_last_day'):
+                L_ = (date.fromisoformat(r['dates'][lead - 1]) - date.fromisoformat(r['source_last_day'])).days
+                if L_ <= RAIN_HORIZON and total is not None:
+                    y, note = guard(float(y), float(r['baseline'][0]), ctx.rules.get(r['id'], {}).get(str(L_)), total, cfg['kind'])
+                notes.append('%s weather (%s mm expected, %s of normal)%s' % (key.split('|')[1], '?' if total is None else '%.1f' % total,
+                             '?' if ratio is None else '%d%%' % round(100 * ratio), '; gut-check ' + note if note else ''))
             out.append(float(y))
-        rows.append(dict(id=r['id'], dates=r['dates'], prediction=out, baseline=frozen.tolist(),
-                         source_last_day=r.get('source_last_day'), units=r.get('units'),
-                         method='Original forecast corrected by weights learned from earlier scored comparisons (%s)' % version(cfg)))
+        row = dict(id=r['id'], dates=r['dates'], prediction=out, baseline=frozen.tolist(),
+                   source_last_day=r.get('source_last_day'), units=r.get('units'),
+                   method='Original forecast corrected by weights learned from earlier scored comparisons (%s)' % version(cfg))
+        if notes: row['reasoning'] = notes
+        rows.append(row)
     return rows
 
 
 def version(cfg):
-    return POLICY['version']        # learning-v2 for every model (rain models also cap each lesson; see error_cap)
+    # learning-v3 for streams and wells (dry/wet corrections + gut-check); learning-v2 for the others
+    # (rain models also cap each lesson; see error_cap)
+    return 'learning-v3' if cfg.get('rain_set') else POLICY['version']
 
 
 def run_model(name, root_out=None):
@@ -150,13 +248,20 @@ def run_model(name, root_out=None):
     ver = version(cfg); registry = p.D / ('model-%s.json' % ver.split('-')[-1])
     weights_path = p.D / 'weights.npz'
     if not registry.exists():
+        if ver == 'learning-v3' and weights_path.exists():
+            # Dry/wet corrections are stored per weather, so relearn from every comparison scored so far
+            # (all observed before now); the learning-v2 weights are kept for the record.
+            weights_path.replace(p.D / 'weights-learning-v2.npz')
         # learning-v2 keeps the learned weights (no relearning); only how strongly they are applied changes.
         # (The 2026-11-11 rain cap, learning-v1.1, did relearn: its old weights are in weights-learning-v1.npz.)
         p.exclusive(registry, dict(created_at=p.utc().isoformat(), model=name, base_ledger=cfg['base'], kind=kind,
                                    transform=cfg['transform'], scale=cfg['scale'], **dict(POLICY, version=ver),
                                    error_cap=cfg.get('error_cap'),
                                    replaces='learning-v1/v1.1: corrections applied in full from the first lesson; in the first week they '
-                                            'made Connecticut streams 41% and rain 22% worse than the originals'))
+                                            'made Connecticut streams 41% and rain 22% worse than the originals',
+                                   **(dict(weather=dict(wet_if_at_least_normal_rain_ratio=WET_SPLIT, horizon_days=RAIN_HORIZON, rain_set=cfg['rain_set'], context=cfg['context'],
+                                                        gut_check='outputs/reasoning/rules.json', rules_sha256=p.digest(ROOT / 'outputs/reasoning/rules.json')),
+                                           replay='outputs/reasoning/policy-replay.json') if ver == 'learning-v3' else {})))
     weights = Weights(weights_path)
     trained = train(weights, base, kind, cfg); weights.save(weights_path)
     status = dict(model=name, trained_on_new_comparisons=trained, total_comparisons_learned=int(weights.n.sum()), last_comparison_row=weights.mark)
@@ -173,7 +278,7 @@ def run_model(name, root_out=None):
         snap = dict(captured_at=p.utc().isoformat(), values={}, grids={}, errors=[], original_forecast=dict(path=path, sha256=sha),
                     last_comparison_row_applied=weights.mark, comparisons_learned=int(weights.n.sum()))
         snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
-        rows = learned_rows(record, weights, cfg)
+        rows = learned_rows(record, weights, cfg, issue_day=today)
         p.seal(c, kind, rows, record.get('unavailable', []), snapshot, snap, registry, model_version=ver,
                extra_sources=[dict(path=path, sha256=sha), dict(path=str(frozen_weights.relative_to(ROOT)), sha256=p.digest(frozen_weights)),
                               dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code))])
