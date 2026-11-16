@@ -179,7 +179,9 @@ def learning(since, day):
         relearned = before is not None and before['n'].sum() > 0 and (bool(relearn_policy) or before['n'].sum() > nn.sum())
         if relearned: lessons_new = int(nn.sum())
         change = ('relearned under %s%s' % (read(relearn_policy[0])['version'], ' after today\'s forecast; applies from tomorrow' if after_issue else '')) if relearn_policy else '–'
-        held = [f for f in glob.glob(str(ROOT / 'data/learning' / name / 'model-v2.json')) if prev and read(f)['created_at'] > stamp(prev[-1])]
+        # Policies registered between yesterday's and today's sealed forecasts (the newest names the switch).
+        held = sorted([read(f) for f in glob.glob(str(ROOT / 'data/learning' / name / 'model-v[23].json'))
+                       if prev and cur and stamp(prev[-1]) < read(f)['created_at'] <= stamp(cur[-1])], key=lambda r: r['created_at'])
         if not cur: change = "today's forecast not issued yet (runs %s)" % ('in the morning part' if cfg['kind'] == 'streamflow' else 'in the night part')
         if cur and trained.any() and (before is None or before['n'].sum() == 0):
             change = 'first lessons'
@@ -190,7 +192,10 @@ def learning(since, day):
                 if j is not None: d.append(s * (now['w'][i, :, 0] - before['w'][j, :, 0]))
             d = np.abs(np.concatenate(d)) * (100 if cfg['transform'] == 'log1p' else 1) if d else np.array([0.0])
             change = 'median %s, largest %s' % (fmt(float(np.median(d[d > 0])) if (d > 0).any() else 0.0, 3), fmt(float(d.max()), 3))
-        if held: change = 'switched to learning-v2 (corrections held back until evidence builds, n/(n+30)); ' + change
+        if held:
+            what = {'learning-v2': 'corrections held back until evidence builds, n/(n+30)',
+                    'learning-v3': 'separate wet/dry-weather corrections chosen by NOAA rain, gut-checked, held back n/(n+30); relearned'}
+            change = 'switched to %s (%s); ' % (held[-1]['version'], what.get(held[-1]['version'], '')) + change
         c = ro(ROOT / 'data/learning' / name / 'ledger.sqlite')
         comp = '–'
         if c is not None:
