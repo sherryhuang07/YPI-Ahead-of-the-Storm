@@ -40,6 +40,9 @@ MODELS = {
     'streamflow': dict(base='data/prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'streamflow-v2': dict(base='data/streamflow-v2-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'regional-streamflow-v2': dict(base='data/regional-streamflow-v2-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'streamflow-v3': dict(base='data/streamflow-v3-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'regional-streamflow-v3': dict(base='data/regional-streamflow-v3-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
+    'groundwater-v3': dict(base='data/groundwater-v3-prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'groundwater-v2': dict(base='data/groundwater-v2-prospective', kind='groundwater', transform='identity', scale=0.5, low=None, high=None),
     'regional-streamflow': dict(base='data/regional-prospective', kind='streamflow', transform='log1p', scale=0.3, low=0.0, high=None),
     'root-zone': dict(base='data/root-zone-prospective', kind='root-zone', transform='identity', scale=0.01, low=0.0, high=1.0),
@@ -53,12 +56,15 @@ MODELS = {
 # below or at least the site's normal rain for those days and that month), learned under the weather that actually happened and applied under the weather
 # NOAA forecasts; then a gut-check from each site's own history (outputs/reasoning/rules.json) caps a rise
 # in a dry stretch or a fall in a wet one. Context comes from the sealed rain of the matching v2 forecast.
-RAIN_CONTEXT = {'streamflow': ('site-rain', 'streamflow', 'data/streamflow-v2-prospective'),
-                'streamflow-v2': ('site-rain', 'streamflow', 'data/streamflow-v2-prospective'),
-                'regional-streamflow': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v2-prospective'),
-                'regional-streamflow-v2': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v2-prospective'),
-                'groundwater': ('site-rain', 'groundwater', 'data/groundwater-v2-prospective'),
-                'groundwater-v2': ('site-rain', 'groundwater', 'data/groundwater-v2-prospective')}
+RAIN_CONTEXT = {'streamflow': ('site-rain', 'streamflow', 'data/streamflow-v3-prospective'),
+                'streamflow-v2': ('site-rain', 'streamflow', 'data/streamflow-v3-prospective'),
+                'regional-streamflow': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v3-prospective'),
+                'regional-streamflow-v2': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v3-prospective'),
+                'groundwater': ('site-rain', 'groundwater', 'data/groundwater-v3-prospective'),
+                'groundwater-v2': ('site-rain', 'groundwater', 'data/groundwater-v3-prospective'),
+                'streamflow-v3': ('site-rain', 'streamflow', 'data/streamflow-v3-prospective'),
+                'regional-streamflow-v3': ('site-rain-regional', 'regional-streamflow', 'data/regional-streamflow-v3-prospective'),
+                'groundwater-v3': ('site-rain', 'groundwater', 'data/groundwater-v3-prospective')}
 for _m, (_set, _rules, _ctx) in RAIN_CONTEXT.items(): MODELS[_m].update(rain_set=_set, rules=_rules, context=_ctx)
 WET_SPLIT = 1.0     # wet = at least normal rain for the window (ratio to the site's 2000-2020 monthly mean)
 RAIN_HORIZON = 10
@@ -231,7 +237,9 @@ def learned_rows(record, weights, cfg, issue_day=None):
 def version(cfg):
     # learning-v3 for streams and wells (dry/wet corrections + gut-check); learning-v2 for the others
     # (rain models also cap each lesson; see error_cap)
-    return 'learning-v3' if cfg.get('rain_set') else POLICY['version']
+    # learning-v3.1 (2026-11-17): same weights; gut-check caps a dry-stretch rise at the site's 80th percentile
+    # (was 99th: too loose to stop a light-shower forecast doubling a river) and keeps the wet floor at the 99th.
+    return 'learning-v3.1' if cfg.get('rain_set') else POLICY['version']
 
 
 def run_model(name, root_out=None):
@@ -261,7 +269,9 @@ def run_model(name, root_out=None):
                                             'made Connecticut streams 41% and rain 22% worse than the originals',
                                    **(dict(weather=dict(wet_if_at_least_normal_rain_ratio=WET_SPLIT, horizon_days=RAIN_HORIZON, rain_set=cfg['rain_set'], context=cfg['context'],
                                                         gut_check='outputs/reasoning/rules.json', rules_sha256=p.digest(ROOT / 'outputs/reasoning/rules.json')),
-                                           replay='outputs/reasoning/policy-replay.json') if ver == 'learning-v3' else {})))
+                                           replay='outputs/reasoning/policy-replay.json',
+                                           gut_check_percentiles=dict(dry=read(ROOT / 'outputs/reasoning/rules.json').get('percentile'),
+                                                                      wet=read(ROOT / 'outputs/reasoning/rules.json').get('wet_percentile'))) if ver.startswith('learning-v3') else {})))
     weights = Weights(weights_path)
     trained = train(weights, base, kind, cfg); weights.save(weights_path)
     status = dict(model=name, trained_on_new_comparisons=trained, total_comparisons_learned=int(weights.n.sum()), last_comparison_row=weights.mark)
@@ -279,9 +289,12 @@ def run_model(name, root_out=None):
                     last_comparison_row_applied=weights.mark, comparisons_learned=int(weights.n.sum()))
         snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
         rows = learned_rows(record, weights, cfg, issue_day=today)
-        p.seal(c, kind, rows, record.get('unavailable', []), snapshot, snap, registry, model_version=ver,
-               extra_sources=[dict(path=path, sha256=sha), dict(path=str(frozen_weights.relative_to(ROOT)), sha256=p.digest(frozen_weights)),
-                              dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code))])
+        extra = [dict(path=path, sha256=sha), dict(path=str(frozen_weights.relative_to(ROOT)), sha256=p.digest(frozen_weights)),
+                 dict(path=str(code.relative_to(ROOT)), sha256=p.digest(code))]
+        if cfg.get('rain_set'):        # keep the exact gut-check rules this forecast used
+            rules_copy = folder / 'reasoning-rules.json'; rules_copy.write_bytes((ROOT / 'outputs/reasoning/rules.json').read_bytes())
+            extra.append(dict(path=str(rules_copy.relative_to(ROOT)), sha256=p.digest(rules_copy)))
+        p.seal(c, kind, rows, record.get('unavailable', []), snapshot, snap, registry, model_version=ver, extra_sources=extra)
         status['issued'] = '%d locations sealed or already present for %s' % (len(rows), today)
     # Observations come from the original ledger with their original capture times, so a learning
     # forecast is scored only by values captured after it was issued (checked by score()).

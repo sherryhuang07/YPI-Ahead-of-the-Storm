@@ -26,10 +26,13 @@ LEVELS = ['LOW', 'MODERATE', 'HIGH', 'VERY HIGH', 'EXTREME']
 LEDGERS = [
     ('Rain, NOAA forecast (shown in app)', 'noaa-rain-prospective', 'precipitation', 'in', 1 / 25.4),
     ('Rain, history average (old baseline)', 'prospective', 'precipitation', 'in', 1 / 25.4),
+    ('Streams v3, with NOAA rain', 'streamflow-v3-prospective', 'streamflow', 'cfs', 1),
     ('Streams v2, with NOAA rain', 'streamflow-v2-prospective', 'streamflow', 'cfs', 1),
     ('Streams v1', 'prospective', 'streamflow', 'cfs', 1),
+    ('Neighboring-state streams v3, with NOAA rain', 'regional-streamflow-v3-prospective', 'streamflow', 'cfs', 1),
     ('Neighboring-state streams v2, with NOAA rain', 'regional-streamflow-v2-prospective', 'streamflow', 'cfs', 1),
     ('Neighboring-state streams v1', 'regional-prospective', 'streamflow', 'cfs', 1),
+    ('Wells v3, with NOAA rain', 'groundwater-v3-prospective', 'groundwater', 'ft', 1),
     ('Wells v2, with NOAA rain', 'groundwater-v2-prospective', 'groundwater', 'ft', 1),
     ('Wells v1', 'prospective', 'groundwater', 'ft', 1),
     ('Soil moisture', 'root-zone-prospective', 'root-zone', '% water', 100),
@@ -85,9 +88,9 @@ def forecasts(day):
             ', '.join(datetime.fromisoformat(d).strftime('%a %b %d') for d in wet) or 'none in the next 10 days')])
     except Exception as e: rows.append(['Rain (NOAA)', 'not available (%s)' % type(e).__name__])
     # streams and wells: the version the app shows
-    for label, kinds in (('Streams', [('streamflow-v2-prospective', 'v2 with rain'), ('prospective', 'v1')]),
-                         ('Neighboring-state streams', [('regional-streamflow-v2-prospective', 'v2 with rain'), ('regional-prospective', 'v1')]),
-                         ('Wells', [('groundwater-v2-prospective', 'v2 with rain'), ('prospective', 'v1')])):
+    for label, kinds in (('Streams', [('streamflow-v3-prospective', 'v3 with rain'), ('streamflow-v2-prospective', 'v2 with rain'), ('prospective', 'v1')]),
+                         ('Neighboring-state streams', [('regional-streamflow-v3-prospective', 'v3 with rain'), ('regional-streamflow-v2-prospective', 'v2 with rain'), ('regional-prospective', 'v1')]),
+                         ('Wells', [('groundwater-v3-prospective', 'v3 with rain'), ('groundwater-v2-prospective', 'v2 with rain'), ('prospective', 'v1')])):
         kind = 'groundwater' if label == 'Wells' else 'streamflow'
         r = None
         for folder, tag in kinds:
@@ -180,7 +183,7 @@ def learning(since, day):
         if relearned: lessons_new = int(nn.sum())
         change = ('relearned under %s%s' % (read(relearn_policy[0])['version'], ' after today\'s forecast; applies from tomorrow' if after_issue else '')) if relearn_policy else '–'
         # Policies registered between yesterday's and today's sealed forecasts (the newest names the switch).
-        held = sorted([read(f) for f in glob.glob(str(ROOT / 'data/learning' / name / 'model-v[23].json'))
+        held = sorted([read(f) for f in [g for g in glob.glob(str(ROOT / 'data/learning' / name / 'model-v*.json')) if not Path(g).name.startswith(('model-v1', 'model-v3-draft'))]
                        if prev and cur and stamp(prev[-1]) < read(f)['created_at'] <= stamp(cur[-1])], key=lambda r: r['created_at'])
         if not cur: change = "today's forecast not issued yet (runs %s)" % ('in the morning part' if cfg['kind'] == 'streamflow' else 'in the night part')
         if cur and trained.any() and (before is None or before['n'].sum() == 0):
@@ -194,7 +197,8 @@ def learning(since, day):
             change = 'median %s, largest %s' % (fmt(float(np.median(d[d > 0])) if (d > 0).any() else 0.0, 3), fmt(float(d.max()), 3))
         if held:
             what = {'learning-v2': 'corrections held back until evidence builds, n/(n+30)',
-                    'learning-v3': 'separate wet/dry-weather corrections chosen by NOAA rain, gut-checked, held back n/(n+30); relearned'}
+                    'learning-v3': 'separate wet/dry-weather corrections chosen by NOAA rain, gut-checked, held back n/(n+30); relearned',
+                    'learning-v3.1': 'gut-check tightened: a rise in a dry stretch is capped at what the site did in 80% of its dry stretches'}
             change = 'switched to %s (%s); ' % (held[-1]['version'], what.get(held[-1]['version'], '')) + change
         c = ro(ROOT / 'data/learning' / name / 'ledger.sqlite')
         comp = '–'

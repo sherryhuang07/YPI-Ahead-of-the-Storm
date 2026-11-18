@@ -26,6 +26,8 @@ from site_rain import history as rain_history, window_sum
 OUT = ROOT / 'outputs/reasoning'
 START = date(2000, 1, 1)
 DRY_MM, WET_MM, HORIZON = 3.0, 25.0, 10
+PCT = 99      # how extreme a dry-stretch rise the gut-check allows (percentile of the site's own dry stretches)
+WET_PCT = 99  # same for falls in wet stretches (chosen separately)
 LEADS = list(range(2, 16))                 # days after the last reading (forecast days 1-14)
 
 
@@ -80,11 +82,11 @@ def limits_for(x, r, kind, end_day):
             if rr < DRY_MM: dry.append(c)
             elif rr >= WET_MM: wet.append(c)
         if kind == 'streamflow':
-            out[L] = dict(dry_rise=float(np.percentile(dry, 99)) if len(dry) >= 50 else None, n_dry=len(dry),
-                          wet_floor=float(np.percentile(wet, 1)) if len(wet) >= 30 else None, n_wet=len(wet))
+            out[L] = dict(dry_rise=float(np.percentile(dry, PCT)) if len(dry) >= 50 else None, n_dry=len(dry),
+                          wet_floor=float(np.percentile(wet, 100 - WET_PCT)) if len(wet) >= 30 else None, n_wet=len(wet))
         else:   # depth: dry -> most negative plausible change (rise); wet -> most positive plausible change (fall)
-            out[L] = dict(dry_rise=float(np.percentile(dry, 1)) if len(dry) >= 50 else None, n_dry=len(dry),
-                          wet_floor=float(np.percentile(wet, 99)) if len(wet) >= 30 else None, n_wet=len(wet))
+            out[L] = dict(dry_rise=float(np.percentile(dry, 100 - PCT)) if len(dry) >= 50 else None, n_dry=len(dry),
+                          wet_floor=float(np.percentile(wet, WET_PCT)) if len(wet) >= 30 else None, n_wet=len(wet))
     return out
 
 
@@ -130,6 +132,11 @@ def v1_stream_pred(model, q, i):
 
 
 def main():
+    import argparse
+    global PCT, WET_PCT
+    ap = argparse.ArgumentParser(); ap.add_argument('--pct', type=float, default=PCT); ap.add_argument('--wet-pct', type=float, default=WET_PCT); ap.add_argument('--out', default='rules.json')
+    ap.add_argument('--select', action='store_true', help='learn on earlier years, score the 3-4 years before the test period (for choosing --pct)')
+    a_ = ap.parse_args(); PCT = a_.pct; WET_PCT = a_.wet_pct
     n = (date.today() - START).days + 1; result = dict(created_at=datetime.now(timezone.utc).isoformat(), dry_mm=DRY_MM, wet_mm=WET_MM,
                                                        horizon_days=HORIZON, sets={})
     from forecast_methods import predict as v1_well
@@ -145,7 +152,8 @@ def main():
             x = flow_series(sid, n) if kind == 'streamflow' else depth_series(sid, n)
             r = rain.get(sid)
             if r is None: continue
-            series[sid] = (x, r, s); rules[sid] = limits_for(x, r, kind, test_start)
+            learn_end = date(test_start.year - (3 if kind == 'streamflow' else 4), 1, 1) if a_.select else test_start
+            series[sid] = (x, r, s); rules[sid] = limits_for(x, r, kind, learn_end)
         pool = pooled(rules)
         for sid, rr in rules.items():
             for L in rr:
@@ -153,9 +161,10 @@ def main():
                     if rr[L][k] is None: rr[L][k] = pool[L][k]; rr[L][k + '_source'] = 'pooled'
         # ---- check on the test years with the rain that actually fell
         before, after, changed, cases, by_rule = [], [], 0, 0, {'dry': [0, 0.0, 0.0], 'wet': [0, 0.0, 0.0]}
-        t0 = (test_start - START).days
+        t0 = ((date(test_start.year - (3 if kind == 'streamflow' else 4), 1, 1) if a_.select else test_start) - START).days
+        t_end = (test_start - START).days if a_.select else n - 16
         for sid, (x, r, s) in series.items():
-            for i in range(t0, n - 16, 14):
+            for i in range(t0, min(n - 16, t_end - 15), 14):
                 if not np.isfinite(x[i]): continue
                 if kind == 'streamflow':
                     p = v1_stream_pred(s['model'] if 'model' in s else {'method': 'persistence'}, x, i)
@@ -179,7 +188,8 @@ def main():
         log('Reasoning rules (%s): %d sites; on %s+ test years %d of %d forecasts changed; v1 error %.3f -> %.3f %s' % (
             set_name, len(rules), test_start, changed, cases, check['mae_v1'], check['mae_with_rules'], check['units']))
         print(set_name, json.dumps(check))
-    OUT.mkdir(parents=True, exist_ok=True); save(OUT / 'rules.json', result)
+    result['percentile'] = PCT; result['wet_percentile'] = WET_PCT
+    OUT.mkdir(parents=True, exist_ok=True); save(OUT / a_.out, result)
 
 
 if __name__ == '__main__':

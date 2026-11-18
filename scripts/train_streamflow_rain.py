@@ -43,13 +43,24 @@ def base_rows(q):
     return idx, X, Y
 
 
+# How rain amounts enter the model. v2 used log(1 + mm), which makes the first few millimetres count
+# as much as the next 35: a fifth of an inch on dry ground could double a forecast flow. Alternatives are
+# compared on the selection years (scripts/compare_rain_measures.py).
+RAIN_MEASURES = {'log1p': np.log1p, 'sqrt': lambda x: np.sqrt(np.maximum(x, 0)), 'linear': lambda x: np.asarray(x) / 10.0,
+                 'excess5': lambda x: np.maximum(np.asarray(x) - 5.0, 0) / 10.0}
+RAIN_MEASURE = 'log1p'
+
+
+def rt(x): return RAIN_MEASURES[RAIN_MEASURE](x)
+
+
 HORIZON = 10   # NOAA's forecast reaches about 10 rain days; rain beyond that is unknown live, so it is not an input
 
 
 def rain_features(r, i, L):
-    past = [np.log1p(window_sum(r, i, n)) for n in POLICY['past_rain_days']]
+    past = [rt(window_sum(r, i, n)) for n in POLICY['past_rain_days']]
     h = min(L, HORIZON)
-    ahead = [np.log1p(window_sum(r, i + h, h)), np.log1p(window_sum(r, i + h, min(3, h)))]
+    ahead = [rt(window_sum(r, i + h, h)), rt(window_sum(r, i + h, min(3, h)))]
     return past + ahead
 
 
@@ -116,11 +127,17 @@ def train(g, rain, normal_series):
 def main():
     import argparse
     global OUT, POLICY
-    ap = argparse.ArgumentParser(); ap.add_argument('--set', choices=['ct', 'regional'], default='ct'); a = ap.parse_args()
+    global RAIN_MEASURE
+    ap = argparse.ArgumentParser(); ap.add_argument('--set', choices=['ct', 'regional'], default='ct')
+    ap.add_argument('--measure', choices=sorted(RAIN_MEASURES), default='log1p'); ap.add_argument('--tag', default='v2'); a = ap.parse_args()
+    RAIN_MEASURE = a.measure
+    # v3 (2026-11-17): rain in plain mm (chosen on the selection years, scripts/compare_rain_measures.py) instead of log(1+mm).
+    OUT = ROOT / ('outputs/streamflow-%s' % a.tag)
+    POLICY = dict(POLICY, version='streamflow-%s' % a.tag, rain_measure=a.measure)
     if a.set == 'regional':
         # Neighboring-state gauges: same method, splits and adopt rule; their frozen regional-v1 models are the comparison.
-        OUT = ROOT / 'outputs/regional-streamflow-v2'
-        POLICY = dict(POLICY, version='regional-streamflow-v2', base='neighboring-state streamflow v1 (data/regional-prospective/model-v1.json)')
+        OUT = ROOT / ('outputs/regional-streamflow-%s' % a.tag)
+        POLICY = dict(POLICY, version='regional-streamflow-%s' % a.tag, base='neighboring-state streamflow v1 (data/regional-prospective/model-v1.json)')
     reg = read(ROOT / ('data/regional-prospective/model-v1.json' if a.set == 'regional' else 'data/prospective/model-v1.json'))
     rain_name = 'site-rain-regional' if a.set == 'regional' else 'site-rain'
     rain, rstart = rain_history(rain_name); assert rstart == START

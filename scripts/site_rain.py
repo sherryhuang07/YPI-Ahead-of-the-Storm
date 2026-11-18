@@ -95,7 +95,13 @@ def nbm_values(sites_meta, today):
             points[s['id']] = (s['lat'], s['lon'])
     # Yesterday's rain day (ending 7 AM yesterday) would need a cycle from two days ago, which NOAA no
     # longer serves; until station or PRISM data arrive, that one day uses normal rain (flagged).
-    c0, _, qpf = nbm_weather(points, not_after=cutoff)
+    try:
+        c0, _, qpf = nbm_weather(points, not_after=cutoff)
+    except RuntimeError:
+        # Late-evening runs: NOAA keeps two UTC days, so yesterday's 7 AM cycle can already be gone. Use the newest
+        # cycle from before 7 AM today: it covers every day from tomorrow; today's rain day then comes from the
+        # forecast saved by an earlier run (live_series falls back to it).
+        c0, _, qpf = nbm_weather(points, not_after=cutoff + timedelta(days=1))
     out = {}
     for sid in points:
         for k in range(0, 16):

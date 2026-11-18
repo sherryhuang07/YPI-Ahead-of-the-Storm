@@ -57,12 +57,23 @@ def level_features(d, i):
     return [d[i], d[i] - back(7), d[i] - back(30), d[i] - np.nanmean(year), np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)]
 
 
+# How rain amounts enter the model. v2 used log(1 + mm), which makes the first few millimetres count
+# as much as the next 35: a fifth of an inch on dry ground could double a forecast flow. Alternatives are
+# compared on the selection years (scripts/compare_rain_measures.py).
+RAIN_MEASURES = {'log1p': np.log1p, 'sqrt': lambda x: np.sqrt(np.maximum(x, 0)), 'linear': lambda x: np.asarray(x) / 10.0,
+                 'excess5': lambda x: np.maximum(np.asarray(x) - 5.0, 0) / 10.0}
+RAIN_MEASURE = 'log1p'
+
+
+def rt(x): return RAIN_MEASURES[RAIN_MEASURE](x)
+
+
 HORIZON = 10   # NOAA's forecast reach in rain days; rain beyond it is not an input
 
 
 def rain_features(r, i, L):
     h = min(L, HORIZON)
-    return [np.log1p(window_sum(r, i, n)) for n in (7, 30, 90)] + [np.log1p(window_sum(r, i + h, h)), np.log1p(window_sum(r, i + h, min(3, h)))]
+    return [rt(window_sum(r, i, n)) for n in (7, 30, 90)] + [rt(window_sum(r, i + h, h)), rt(window_sum(r, i + h, min(3, h)))]
 
 
 def train(w, rain, normal_series, n):
@@ -129,6 +140,11 @@ def train(w, rain, normal_series, n):
 
 
 def main():
+    import argparse
+    global RAIN_MEASURE, OUT, POLICY
+    ap = argparse.ArgumentParser(); ap.add_argument('--measure', choices=sorted(RAIN_MEASURES), default='log1p'); ap.add_argument('--tag', default='v2'); a = ap.parse_args()
+    # v3 (2026-11-17): rain beyond the first 5 mm (chosen on the selection years) instead of log(1+mm).
+    RAIN_MEASURE = a.measure; OUT = ROOT / ('outputs/groundwater-%s' % a.tag); POLICY = dict(POLICY, version='groundwater-%s' % a.tag, rain_measure=a.measure)
     reg = read(ROOT / 'data/prospective/model-v1.json')
     rain, rstart = rain_history(); assert rstart == START
     n = (date.today() - START).days + 1; results = []

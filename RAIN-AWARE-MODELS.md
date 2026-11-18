@@ -75,3 +75,33 @@ Training used the rain that actually fell. NOAA's old forecasts aren't archived,
 ## Limits
 
 Rain station networks change over time, CoCoRaHS grew after 2008, and reporting times differ. The test can't measure NOAA's own forecast error, which the live ledger will. Dams, reservoir releases and withdrawals are still not included.
+
+## Version 3: how much a shower counts (November 17, 2026)
+
+**What went wrong live.** v2 entered rain as log(1 + mm), which makes the first few millimetres count as much as the next 35. In a dry November week, NOAA forecast 5.6 mm (0.2 in) on day 6 for the Pootatuck River. v2 doubled its flow forecast that day (15 to 30 cfs), and ten other rivers jumped the same way. On Nov 13–14, NOAA's 7–14 mm made v2 forecast 75–90% rises; the rivers rose about 13%. Light rain on dry autumn ground mostly soaks in.
+
+**Choice, made on the selection years only** (`scripts/compare_rain_measures.py`, `outputs/reasoning/rain-measures.json`). The table shows the median error per site.
+
+| Rain measure | CT streams 2021–22 | Neighbouring streams 2021–22 | Wells 2019–21 |
+|---|---|---|---|
+| log(1 + mm), v2 | 24.7 cfs | 51.3 cfs | 0.424 ft |
+| √mm | 20.6 | 45.3 | 0.365 |
+| mm (chosen for streams) | **20.0** | **41.7** | 0.324 |
+| mm beyond the first 5 (chosen for wells) | 20.6 | 43.2 | **0.324** |
+
+**v3** = v2 retrained with those measures (`train_streamflow_rain.py --measure linear --tag v3`, `--set regional`, `train_groundwater_rain.py --measure excess5 --tag v3`). The table shows test-year error with a perfect rain forecast.
+
+| | v2 | v3 | v1 |
+|---|---|---|---|
+| CT streams, median (cfs) | 21.3 | 21.3 | 25.5 |
+| Neighbouring streams, median (cfs) | 49.7 | **44.7** | 66.7 |
+| Wells, mean (ft) | 0.450 | **0.375** | 0.619 |
+
+All three pass the adopt rule. From November 18 the daily runs, the app and the learning versions use v3, in `data/<kind>-v3-prospective`. v2's sealed record (November 11–17) is kept.
+
+**Live NOAA fallback.** NOAA keeps two days of cycles (by UTC), so a run late in the evening can no longer fetch the cycle from before 7 AM yesterday. It then uses the newest cycle from before 7 AM today, which covers every day from tomorrow; today's rain day comes from the forecast an earlier run saved. The first v3 issue (late on November 17) was sealed before this fix, with "no rain forecast" inputs.
+
+**Gut-check tightened (learning-v3.1, `reasoning_rules.py --pct 80 --wet-pct 99`).** A rise during a dry stretch is now capped at the site's 80th percentile of its own dry stretches; it was the 99th.
+- **How it was chosen:** the strictness was picked on separate middle years (streams 2021–2023, wells 2019–2022), with the rules learned on the years before.
+- **Wet floors** helped on the middle years but hurt on the test years, so they stay at the 99th: an extreme-case check only.
+- **On the test years:** CT streams 195.9 → 194.3 cfs, neighbouring 366.6 → 365.0, wells 0.508 → 0.496 ft. Where a dry cap applies (about 1 forecast in 10), the error falls by about a third.

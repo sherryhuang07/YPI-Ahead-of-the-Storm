@@ -10,7 +10,8 @@ then PRISM, then NOAA NBM (cycle issued by 7 AM yesterday), then normal. Rain ah
 first 10 days, as in training; when NOAA does not cover all of them the model uses its "no rain
 forecast" inputs (the month's typical values), which is how its normal-rain test was run.
 
-Ledgers: data/<kind>-v2-prospective, outputs/<kind>-v2-prospective; same sealing, no-backdating
+Ledgers: data/<kind>-<tag>-prospective, outputs/<kind>-<tag>-prospective (tag = TAG, v3 from 2026-11-18; v2 ran
+2026-11-11..17 and its ledgers are kept); same sealing, no-backdating
 and scoring rules as every other ledger. Observations are copied from the v1 ledger with their
 original capture times. Baseline = the last reading ("no change"), as for v1.
 """
@@ -23,18 +24,19 @@ import prospective_daily as p
 from statewide_common import ROOT, read, save, log
 from site_rain import live_series, window_sum
 
-CFG = {'streamflow': dict(trained='outputs/streamflow-v2', version='streamflow-v2', key='gauge_id', horizon=10, variable='streamflow',
+TAG = 'v3'   # v3 measures rain in plain mm (streams) or rain beyond 5 mm (wells); v2 used log(1+mm)
+CFG = {'streamflow': dict(trained='outputs/streamflow-' + TAG, version='streamflow-' + TAG, key='gauge_id', horizon=10, variable='streamflow',
                          readings='outputs/prospective/last-run.json', base='data/prospective', rain='site-rain'),
-       'groundwater': dict(trained='outputs/groundwater-v2', version='groundwater-v2', key='id', horizon=10, variable='groundwater',
+       'groundwater': dict(trained='outputs/groundwater-' + TAG, version='groundwater-' + TAG, key='id', horizon=10, variable='groundwater',
                            readings='outputs/prospective/last-run.json', base='data/prospective', rain='site-rain'),
        # Neighboring-state gauges: readings from the regional ledger's snapshot, rain from the regional set.
-       'regional-streamflow': dict(trained='outputs/regional-streamflow-v2', version='regional-streamflow-v2', key='gauge_id', horizon=10, variable='streamflow',
+       'regional-streamflow': dict(trained='outputs/regional-streamflow-' + TAG, version='regional-streamflow-' + TAG, key='gauge_id', horizon=10, variable='streamflow',
                                    readings='outputs/regional-prospective/last-run.json', base='data/regional-prospective', rain='site-rain-regional')}
 LEADS = list(range(2, 16))
 
 
 def registry(kind):
-    path = p.D / 'model-v2.json'
+    path = p.D / ('model-%s.json' % TAG)
     if not path.exists():
         t = read(ROOT / CFG[kind]['trained'] / 'latest.json'); run = ROOT / CFG[kind]['trained'] / 'runs' / t['run']
         man = read(run / 'manifest.json')
@@ -51,11 +53,19 @@ def lin(model, x):
     return float(z @ np.array(model['beta'])[:, 0])
 
 
+def rt(x):
+    """The rain measure the frozen model was trained with (set from its policy in main())."""
+    return MEASURE(x)
+
+
+MEASURE = np.log1p
+
+
 def ahead(r, src, i, L, normal_row, horizon):
     h = min(L, horizon); window = range(i + 1, i + h + 1)
     if any(src[j] in ('normal',) for j in window) or i + h >= len(r):
         return list(normal_row), 'no rain forecast (typical values)'
-    return [np.log1p(window_sum(r, i + h, h)), np.log1p(window_sum(r, i + h, min(3, h)))], 'rain: ' + '/'.join(sorted({src[j] for j in window}))
+    return [rt(window_sum(r, i + h, h)), rt(window_sum(r, i + h, min(3, h)))], 'rain: ' + '/'.join(sorted({src[j] for j in window}))
 
 
 def well_history(wid, snap_vals):
@@ -71,11 +81,14 @@ def well_history(wid, snap_vals):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--kind', choices=sorted(CFG), required=True); ap.add_argument('--test-dir'); a = ap.parse_args()
     kind = a.kind; cfg = CFG[kind]; var = cfg['variable']; base = Path(a.test_dir) if a.test_dir else None
-    p.D = base / 'data' if base else ROOT / ('data/%s-v2-prospective' % kind)
-    p.O = base / 'outputs' if base else ROOT / ('outputs/%s-v2-prospective' % kind)
+    p.D = base / 'data' if base else ROOT / ('data/%s-%s-prospective' % (kind, TAG))
+    p.O = base / 'outputs' if base else ROOT / ('outputs/%s-%s-prospective' % (kind, TAG))
     p.D.mkdir(parents=True, exist_ok=True); p.O.mkdir(parents=True, exist_ok=True)
     c = p.db(); p.verify(c); reg_path, reg = registry(kind)
     models = {r[cfg['key']]: r for r in read(ROOT / reg['results_path']) if r.get('status') == 'trained'}
+    global MEASURE
+    from train_streamflow_rain import RAIN_MEASURES
+    MEASURE = RAIN_MEASURES[read(ROOT / reg['results_path'].replace('results.json', 'policy.json')).get('rain_measure', 'log1p')]
     last_run = read(ROOT / cfg['readings']); snapshot_in = read(ROOT / last_run['snapshot'])
     now = p.utc(); today = now.astimezone(p.LOCAL).date()
     rain, cycle = live_series(today, name=cfg['rain'])
@@ -94,7 +107,7 @@ def main():
                 if not np.isfinite(q).all(): raise ValueError('Recent 28-day flow window is incomplete')
                 z = np.log1p(q); doy = last.timetuple().tm_yday
                 xb = [z[-1 - k] for k in [0, 1, 2, 6, 13, 27]] + [np.mean(z[-k:]) for k in [7, 14, 28]] + [np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)]
-                past = [np.log1p(window_sum(r, i, n)) for n in (1, 3, 7, 30)]; base_value = float(q[-1])
+                past = [rt(window_sum(r, i, n)) for n in (1, 3, 7, 30)]; base_value = float(q[-1])
             else:
                 dd = np.array([hist.get(str(last - timedelta(days=364 - k)), np.nan) for k in range(365)])
                 if np.isfinite(dd).sum() < 200: raise ValueError('Fewer than 200 readings in the last year')
@@ -105,7 +118,7 @@ def main():
                     return np.nan
                 doy = last.timetuple().tm_yday; d0 = dd[-1]
                 xb = [d0, d0 - back(7), d0 - back(30), d0 - np.nanmean(dd), np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)]
-                past = [np.log1p(window_sum(r, i, n)) for n in (7, 30, 90)]; base_value = float(d0)
+                past = [rt(window_sum(r, i, n)) for n in (7, 30, 90)]; base_value = float(d0)
             if not np.isfinite(xb + past).all(): raise ValueError('Level or past-rain inputs incomplete')
             pred = []; lo = []; hi = []; how = []
             for k, L in enumerate(LEADS):
@@ -139,7 +152,7 @@ def main():
     issued = c.execute('SELECT path FROM forecasts WHERE substr(issue_day,1,10)=? AND variable=?', (str(today), var)).fetchone()
     save(p.O / 'last-run.json', dict(completed_at=p.utc().isoformat(), issue_day=str(today), sealed_today=issued[0] if issued else None, model_version=reg['version'],
                                      adopted_for_app=reg['adopt'], locations=len(rows), withheld=missing, nbm_cycle=cycle, new_comparisons=new))
-    log('%s v2 (with rain): %d sealed, %d withheld; NOAA cycle %s; %d new comparisons.' % (kind, len(rows), len(missing), cycle, new))
+    log('%s %s (with rain): %d sealed, %d withheld; NOAA cycle %s; %d new comparisons.' % (kind, TAG, len(rows), len(missing), cycle, new))
 
 
 if __name__ == '__main__':

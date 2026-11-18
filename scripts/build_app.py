@@ -141,7 +141,7 @@ def soil():
 
 def rain_aware(kind):
     """Today's v2 (rain-aware) issue if its frozen adopt rule passed and it is sealed today; else None."""
-    run = j('outputs/%s-v2-prospective/last-run.json' % kind)
+    run = j('outputs/%s-v3-prospective/last-run.json' % kind)
     if run and run.get('adopted_for_app') and run.get('sealed_today'):
         r = j(run['sealed_today'])
         if r and r['forecasts']: return r
@@ -151,14 +151,14 @@ def rain_aware(kind):
 def streams():
     r = rain_aware('streamflow') or latest_issue('streamflow')
     if not r: return None
-    return dict(issued=r['issued_at'], with_rain=r.get('model_version') == 'streamflow-v2', gauges=[dict(name=g['name'], dates=g['dates'], flow=[round(v, 1) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
+    return dict(issued=r['issued_at'], with_rain=r.get('model_version') in ('streamflow-v2', 'streamflow-v3'), gauges=[dict(name=g['name'], dates=g['dates'], flow=[round(v, 1) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
                                              for g in sorted(r['forecasts'], key=lambda g: g['name'])], withheld=len(r['unavailable']))
 
 
 def wells():
     r = rain_aware('groundwater') or latest_issue('groundwater')
     if not r: return None
-    return dict(issued=r['issued_at'], with_rain=r.get('model_version') == 'groundwater-v2', wells=[dict(name=g['name'], dates=g['dates'], depth=[round(v, 2) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
+    return dict(issued=r['issued_at'], with_rain=r.get('model_version') in ('groundwater-v2', 'groundwater-v3'), wells=[dict(name=g['name'], dates=g['dates'], depth=[round(v, 2) for v in g['prediction']], last=g['baseline'][0], last_day=g['source_last_day'])
                                             for g in r['forecasts']])
 
 
@@ -192,10 +192,13 @@ def accuracy():
     add('Rain (history-based baseline)', 'rain.html', 'outputs/prospective/scoreboard.json', 'precipitation', 'in', 1 / 25.4)
     add('Groundwater wells', 'wells.html', 'outputs/prospective/scoreboard.json', 'groundwater', 'ft')
     add('Groundwater wells, with NOAA rain (v2)', 'wells.html', 'outputs/groundwater-v2-prospective/scoreboard.json', 'groundwater', 'ft')
+    add('Groundwater wells, with NOAA rain (v3)', 'wells.html', 'outputs/groundwater-v3-prospective/scoreboard.json', 'groundwater', 'ft')
     add('Streams (Connecticut gauges)', 'streams.html', 'outputs/prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Streams, with NOAA rain (v2)', 'streams.html', 'outputs/streamflow-v2-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
+    add('Streams, with NOAA rain (v3)', 'streams.html', 'outputs/streamflow-v3-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Neighboring-state streams (upstream context)', 'streams.html', 'outputs/regional-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Neighboring-state streams, with NOAA rain (v2)', 'streams.html', 'outputs/regional-streamflow-v2-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
+    add('Neighboring-state streams, with NOAA rain (v3)', 'streams.html', 'outputs/regional-streamflow-v3-prospective/scoreboard.json', 'streamflow', 'cfs', fmt='%.1f')
     add('Soil moisture', 'soil.html', 'outputs/root-zone-prospective/scoreboard.json', 'root-zone', '% soil water', 100, '%.2f')
     add('Fire danger', 'fire.html', 'outputs/fire-danger-prospective/scoreboard.json', 'fire-danger', 'classes')
     add('Coastal water temperature', 'coast.html', 'outputs/water-temp-prospective/scoreboard.json', 'water-temp', '°F', 1.8, '%.1f')
