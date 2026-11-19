@@ -13,7 +13,7 @@ There are 36 Connecticut stations listed, **22 active**: 3 airports (Danbury, Br
 1. Open newa.cornell.edu in the built-in browser and set the page size (it can't be clicked while the pane is hidden).
 2. Run `scripts/newa_capture.js`. This recorder makes no requests of its own; it only summarises the data the page loads when a station is picked.
 3. Pick each of the 22 stations in the station box, then re-pick any that didn't load. The page doesn't reload a station that is already showing.
-4. Export a compact summary to `data/newa/<date>T<time>.json`. It holds each station's last 7 days of measured rain and temperature, plus 6 forecast days: high, low, chance of rain, rain amount when complete (20+ of 24 hours) and weather word.
+4. Export a compact summary to `data/newa/<date>T<time>.json`. It holds each station's last 7 days of measured rain and temperature, measured rain on 7 AM days for the last 10 days, plus 6 forecast days: high, low, chance of rain, rain amount when complete (20+ of 24 hours) and weather word.
 5. `scripts/newa_weather.py` turns the capture into 5-day weather for each planning region and statewide (`outputs/newa/latest-regions.json`). Stations are placed by the TIGERweb region boundaries; a region with no active station takes the 2 nearest.
 
 **Gut-checks.** A station whose daily high equals its low on 3 or more days has a stuck thermometer, so its temperatures are left out; on November 19, 2026, Shelton (Jones Family Farm) read 75.2°F all week. A rain gauge that read 0 in for the week while the typical station caught at least 0.2 in is left out of measured rain. On November 19, 9 of 22 gauges did this after the November 12–13 rain, possibly because they are winterised.
@@ -21,7 +21,12 @@ There are 36 Connecticut stations listed, **22 active**: 3 airports (Danbury, Br
 ## How the drought forecast uses it
 `drought_daily.py` (v1 and v2) uses NEWA's regional rain amount for each day it is complete, usually the first 3 days, and NOAA NBM for later days, then normal rain beyond NOAA's reach. Each sealed forecast records how many days came from each source (`rain_ahead_source`) and the NEWA file with its fingerprint. A capture older than 30 hours, or a failed visit, falls back to NOAA NBM automatically. The daily report has a "NEWA weather stations: next 5 days" section.
 
-NEWA's forecast comes from the National Weather Service, the same family as NOAA's NBM, so it is not an independent forecast. The drought model also has no temperature input, so NEWA's temperatures are shown but not used. NEWA's fast measured rain (hourly from 22 stations, against 2–4 days' delay for the NOAA station records) is the most promising next use for the stream and well models.
+NEWA's forecast comes from the National Weather Service, the same family as NOAA's NBM, so it is not an independent forecast. The drought model also has no temperature input, so NEWA's temperatures are shown but not used.
+
+## How the stream and well forecasts use it
+The capture also holds each station's measured rain on 7 AM days, summed from the hourly gauge (`r7`, from November 19, 2026). The v3 stream and well forecasts use it after NOAA station records and PRISM, and before NOAA forecasts. So yesterday's rain is now measured rather than forecast, because NOAA's station records arrive 2–4 days late.
+
+NEWA rain is scaled up to match the NOAA gauges, since tipping buckets undercatch. The scale is learned from overlap days and kept between 0.8 and 1.3. The details are in [RAIN-AWARE-MODELS.md](RAIN-AWARE-MODELS.md). Every capture is kept, so a missed night only loses that one day.
 
 ## Challenges
 - **The routine needs the Claude desktop app open and the computer awake at 11:34 PM.** The Windows forecast runs work without the app, but this one doesn't. A missed night just means NOAA rain only for that day's drought forecast.

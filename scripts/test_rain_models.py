@@ -47,6 +47,16 @@ class RainModelTests(unittest.TestCase):
         n = normal_by_month(s, start)
         self.assertAlmostEqual(n[1], 2.0, delta=0.1)
 
+    def test_newa_scale(self):
+        import site_rain
+        start = date(2026, 11, 1); hist = {'g%d' % k: np.full(30, 10.0) for k in range(12)}
+        newa = {'g%d' % k: {'2026-11-05': 8.0} for k in range(12)}
+        self.assertAlmostEqual(site_rain.newa_scale(newa, hist, start)[0], 1.25)          # station 10 vs NEWA 8
+        few = {'g0': {'2026-11-05': 8.0}}
+        self.assertEqual(site_rain.newa_scale(few, hist, start)[0], 1.0)                   # too little evidence
+        low = {'g%d' % k: {'2026-11-05': 2.0} for k in range(12)}
+        self.assertEqual(site_rain.newa_scale(low, hist, start)[0], 1.3)                   # capped
+
 
 if __name__ == '__main__':
     unittest.main()

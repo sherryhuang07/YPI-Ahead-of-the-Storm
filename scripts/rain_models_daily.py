@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import prospective_daily as p
 from statewide_common import ROOT, read, save, log
-from site_rain import live_series, window_sum
+from site_rain import live_series, window_sum, NEWA_INFO
 
 TAG = 'v3'   # v3 measures rain in plain mm (streams) or rain beyond 5 mm (wells); v2 used log(1+mm)
 CFG = {'streamflow': dict(trained='outputs/streamflow-' + TAG, version='streamflow-' + TAG, key='gauge_id', horizon=10, variable='streamflow',
@@ -135,7 +135,7 @@ def main():
         except (ValueError, KeyError) as e:
             missing.append(dict(id=sid, reason=str(e)))
     folder = p.D / 'snapshots' / p.stamp(); folder.mkdir(parents=True)
-    snap = dict(captured_at=snapshot_in['captured_at'], values={}, grids={}, errors=[], readings_snapshot=last_run['snapshot'], nbm_cycle=cycle,
+    snap = dict(captured_at=snapshot_in['captured_at'], values={}, grids={}, errors=[], readings_snapshot=last_run['snapshot'], nbm_cycle=cycle, newa=dict(NEWA_INFO),
                 rain={sid: dict(days=v['days'][-30:], mm=[round(float(x), 2) for x in v['rain'][-30:]], source=v['source'][-30:]) for sid, v in rain.items() if sid in models})
     snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)
     code = folder / 'rain-models-runner.py'

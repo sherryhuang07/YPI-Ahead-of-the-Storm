@@ -21,6 +21,17 @@
     for (const r of dd.slice(-10)) out.observed.push({ date: String(r[iD]).slice(0, 10), rain_in: num(r[iP]), high_f: num(r[iX]), low_f: num(r[iN]) });
     const hf = j.hrlyFields || [], hd = j.hrlyData || [];
     if (hd.length) out.last_observation = hd[hd.length - 1][hf.indexOf('date')];
+    // Measured rain on 7 AM-to-7 AM days (the convention of the rain records the stream and well models were
+    // trained on): a rain day D is the 24 hours ending 7 AM on D. Hourly times are local hour-ending.
+    const hD = hf.indexOf('date'), hP = hf.indexOf('prcp'); const r7 = {};
+    for (const r of hd.slice(-24 * 12)) {
+      const t = String(r[hD]); const day = t.slice(0, 10), hh = parseInt(t.slice(11, 13), 10);
+      let label = day;
+      if (hh > 7) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); label = d.toISOString().slice(0, 10); }
+      const v = num(r[hP]); const x = r7[label] || (r7[label] = { rain_in: 0, hours: 0 });
+      if (v !== null) { x.rain_in = Math.round((x.rain_in + v) * 1000) / 1000; x.hours += 1; }
+    }
+    out.rain_7am = Object.entries(r7).sort().slice(-10).map(([d, x]) => [d, x.hours >= 22 ? x.rain_in : null, x.hours]);
     const ff = j.fcstFields || [], fd = j.fcstData || [];
     const fD = ff.indexOf('date'), fP = ff.indexOf('pop12'), fQ = ff.indexOf('qpf'), fT = ff.indexOf('temp');
     for (const r of fd) {

@@ -14,9 +14,16 @@ The original stream (55 Connecticut gauges) and well (8 USGS wells) forecasts us
 For live forecasts (`scripts/site_rain.py`), each day takes the first available of:
 1. station rain, which NOAA posts 2–4 days late;
 2. PRISM for that day: the drainage-area mean, or the cell at a well. PRISM's grid here covers Connecticut only, so it is used only where at least half the drainage area is inside it.
-3. NOAA NBM, from the newest cycle issued by 7 AM yesterday, so each forecast day is a full 24 hours of forecast.
-4. For past days that stations and PRISM haven't reached yet: the most recent saved NOAA forecast for that day. Each run saves its NOAA values in `data/rain-stations/nbm-archive/` (from November 12, 2026).
-5. Normal rain, flagged.
+3. NEWA measured rain (from November 19, 2026), from the Cornell weather stations visited each night in the browser ([NEWA.md](NEWA.md)). Each station's hourly gauge is summed into 7 AM days, and a day counts only if at least 22 of its 24 hours are present.
+   - A gauge site uses the stations inside its drainage area. Otherwise, and at every well, it uses the 3 nearest stations within 25 km, with the closest counting most.
+   - Gauges that failed the gut-check (read 0 for the week while neighbours caught rain) are left out.
+   - NEWA's tipping-bucket gauges catch less than the NOAA volunteer gauges, so NEWA rain is scaled up to match them. The scale is the NOAA total over the NEWA total on days where both measured at least 1 mm. It needs 10 such site-days, otherwise 1.0, and it is kept between 0.8 and 1.3.
+   - First check, November 10–14: NEWA read 8.8 mm against NOAA's 11.2 mm for the Nov 13 rain at Connecticut sites. The learned scale was 1.29.
+   - Each sealed forecast records the scale and the captures used.
+   - NEWA fills the days where NOAA forecasts and normal rain were used before: yesterday's rain day everywhere, and recent days at the 8 large basins PRISM can't cover. It covers Connecticut only, so neighbouring-state gauges get it only near the border (14 of 66).
+4. NOAA NBM, from the newest cycle issued by 7 AM yesterday, so each forecast day is a full 24 hours of forecast.
+5. For past days that none of the above have reached yet: the most recent saved NOAA forecast for that day. Each run saves its NOAA values in `data/rain-stations/nbm-archive/` (from November 12, 2026).
+6. Normal rain, flagged.
 
 If NOAA's station service is busy, the refresh retries, and a batch that keeps failing uses its saved rain.
 
