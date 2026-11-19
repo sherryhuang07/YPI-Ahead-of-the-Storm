@@ -70,6 +70,17 @@ def forecast_rain(today, last_target, normal):
     return out, c0.isoformat()
 
 
+def newa_rain():
+    """unit -> {day: inches} from outputs/newa/latest-regions.json, rebuilt from the newest NEWA capture."""
+    try:
+        from newa_weather import build
+        r = build()
+    except Exception as e:
+        log('NEWA weather unavailable for the drought forecast (%s); using NOAA NBM.' % type(e).__name__); return {}
+    if r.get('status') != 'ok': return {}
+    return {u: {d['date']: d['rain_in'] for d in v['next_days'] if d.get('rain_in') is not None} for u, v in r['regions'].items()}
+
+
 def main():
     global V
     ap = argparse.ArgumentParser(); ap.add_argument('--test-dir'); ap.add_argument('--version', choices=sorted(VERSIONS), default='v1'); a = ap.parse_args()
@@ -85,6 +96,9 @@ def main():
     k = (1 - today.weekday()) % 7 or 7                  # days to the next Tuesday after today
     targets = [today + timedelta(days=k), today + timedelta(days=k + 7)]
     rain, cycle = forecast_rain(today, targets[-1], normal)
+    # NEWA (newa.cornell.edu, captured nightly by the browser session): per-region National Weather Service rain
+    # amounts for the days it has them complete (usually ~3), used before NOAA NBM. Stale or missing -> NBM only.
+    newa = newa_rain()
     rows = []; missing = []; sources_note = {}
     for unit, maps in A['usdm'].items():
         m0 = max(maps); preds = []; cums = []; cats = []; ahead_src = []; pw = []; pi = []
@@ -92,8 +106,10 @@ def main():
             lead = (t - date.fromisoformat(m0)).days // 7
             if str(lead) not in models: missing.append(dict(id=unit, reason='Target %s is %d weeks after the latest map; no model for that lead' % (t, lead))); break
             days = [str(today + timedelta(days=j)) for j in range((t - today).days + 1)]
-            ahead = sum(rain[d] if rain.get(d) is not None else normal for d in days)
-            ahead_src.append('%d of %d days NOAA NBM, rest normal' % (sum(rain.get(d) is not None for d in days), len(days)))
+            nw = newa.get(unit, {})
+            ahead = sum(nw[d] if nw.get(d) is not None else rain[d] if rain.get(d) is not None else normal for d in days)
+            n_newa = sum(nw.get(d) is not None for d in days); n_nbm = sum(nw.get(d) is None and rain.get(d) is not None for d in days)
+            ahead_src.append(('%d NEWA, ' % n_newa if n_newa else '') + '%d of %d days NOAA NBM, rest normal' % (n_nbm, len(days)))
             x = drivers(A, unit, m0, issue, str(t), ahead, vegdri=V['vegdri'])
             if x is None: missing.append(dict(id=unit, reason='No current Drought Monitor map')); break
             mm = models[str(lead)]['model']; y = finish(maps[m0] / 100, predict(mm, x[None, :])[0], mm.get('deadband', 0.0))
@@ -106,7 +122,9 @@ def main():
                              cumulative_percent_d0_to_d4=cums, dominant_class=cats, chance_worse=pw, chance_better=pi, current_map=m0, current_class=LEVELS[category(maps[m0] / 100)],
                              rain_ahead_source=ahead_src, units='DSCI 0-500 (sum of percent of area at D0+..D4+)'))
     folder = p.D / 'snapshots' / p.stamp(); folder.mkdir(parents=True)
+    nf = ROOT / 'outputs/newa/latest-regions.json'
     snap = dict(captured_at=p.utc().isoformat(), values={}, grids={}, errors=[], nbm_cycle=cycle, rain_forecast_in=rain,
+                newa=dict(regions_file=str(nf.relative_to(ROOT)), sha256=p.digest(nf), rain_in=newa) if nf.exists() else None,
                 inputs={n: p.digest(ROOT / 'data' / n) for n in ('drought/usdm-weekly.csv', 'drought/palmer-divisions.csv', 'drought/soil-moisture-daily.csv',
                                                                   'fire-danger/history.csv', 'water-temp/daily.csv') + (('drought/vegdri-weekly.csv',) if V['vegdri'] else ())})
     snapshot = folder / 'inputs.json'; p.exclusive(snapshot, snap)

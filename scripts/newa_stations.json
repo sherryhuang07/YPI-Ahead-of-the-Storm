@@ -1,0 +1,27 @@
+{
+  "note": "Active Connecticut NEWA stations (station list read from newa.cornell.edu on 2026-11-19; 14 inactive stations left out). name = exactly as typed in the site's station box.",
+  "stations": [
+    {"sid": "kdxr icao", "name": "Danbury", "lat": 41.3714, "lon": -73.4828},
+    {"sid": "kbdr icao", "name": "Bridgeport", "lat": 41.1583, "lon": -73.1289},
+    {"sid": "kbdl icao", "name": "Hartford (Bradley AP)", "lat": 41.94, "lon": -72.68},
+    {"sid": "ct_ssm newa", "name": "Southington (Shuttle Meadow)", "lat": 41.6384, "lon": -72.8419},
+    {"sid": "ct_ell newa", "name": "Ellington", "lat": 41.9173, "lon": -72.4582},
+    {"sid": "ct_gui newa", "name": "Guilford", "lat": 41.2932, "lon": -72.6943},
+    {"sid": "ct_gfy newa", "name": "Gales Ferry", "lat": 41.4684, "lon": -72.0573},
+    {"sid": "ct_ssu newa", "name": "Southington (Sunnymount)", "lat": 41.559, "lon": -72.9437},
+    {"sid": "ct_kil newa", "name": "Killingworth", "lat": 41.4127, "lon": -72.5812},
+    {"sid": "ct_nor newa", "name": "Northford", "lat": 41.4049, "lon": -72.786},
+    {"sid": "ct_nwi newa", "name": "North Windham", "lat": 41.7216, "lon": -72.1675},
+    {"sid": "ct_swo newa", "name": "South Woodstock MS", "lat": 41.9287, "lon": -71.9562},
+    {"sid": "ct_mid newa", "name": "Middlefield (UConn)", "lat": 41.494, "lon": -72.7262},
+    {"sid": "ct_sto newa", "name": "Storrs (Research Farm)", "lat": 41.7941, "lon": -72.2302},
+    {"sid": "ct_bri newa", "name": "Bridgewater", "lat": 41.4914, "lon": -73.3419},
+    {"sid": "ct_sgl newa", "name": "S. Glastonbury", "lat": 41.652, "lon": -72.5764},
+    {"sid": "ct_wal newa", "name": "Wallingford", "lat": 41.4498, "lon": -72.8674},
+    {"sid": "ct_sjp newa", "name": "Shelton (Jones Family Farm PSH)", "lat": 41.341, "lon": -73.1635},
+    {"sid": "ct_wad newa", "name": "Washington Depot", "lat": 41.6653, "lon": -73.3408},
+    {"sid": "ct_wol newa", "name": "Woodstock (Orchards LTE)", "lat": 41.9308, "lon": -71.9853},
+    {"sid": "ct_woq newa", "name": "Woodstock (Orch Quasset)", "lat": 41.9308, "lon": -71.9853},
+    {"sid": "ct_eca newa", "name": "East Canaan", "lat": 42.021, "lon": -73.2649}
+  ]
+}

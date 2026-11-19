@@ -237,6 +237,28 @@ def reasoning(day):
                 + (['Gut-check examples: ' + '; '.join(examples)] if examples else []))
 
 
+def newa_section():
+    """5-day weather per region from the nightly NEWA station capture (outputs/newa/latest-regions.json)."""
+    p_ = ROOT / 'outputs/newa/latest-regions.json'
+    r = read(p_) if p_.exists() else None
+    if not r or r.get('status') != 'ok':
+        return dict(title='NEWA weather stations: next 5 days', table=dict(head=['Area', 'Next 5 days'], rows=[['–', 'no recent NEWA capture (the nightly browser visit did not run or is older than 30 hours)']]), notes=[])
+    rows = []
+    for k in ['CT'] + sorted(x for x in r['regions'] if x != 'CT'):
+        v = r['regions'][k]
+        days = ['%s %s%s%s' % (datetime.fromisoformat(d['date']).strftime('%a'), d['weather'] or '?',
+                               ' %d%%' % d['max_chance_of_rain'] if d.get('max_chance_of_rain') else '',
+                               ' %.2f in' % d['rain_in'] if d.get('rain_in') is not None else '') for d in v['next_days']]
+        rows.append([v['name'], '; '.join(days), '%s in' % v['measured_rain_last_7_days_in'] if v['measured_rain_last_7_days_in'] is not None else '–',
+                     '%s–%s °F' % (min(d['low_f'] for d in v['next_days'] if d['low_f'] is not None), max(d['high_f'] for d in v['next_days'] if d['high_f'] is not None))])
+    notes = ['From newa.cornell.edu station pages, opened one by one each night (%d of %d active Connecticut stations captured at %s). Forecasts are the National Weather Service\'s; rain amounts are given for about 3 days, after that only the chance of rain (%%). The drought forecast uses these amounts where complete, NOAA NBM otherwise.'
+             % (r['stations_captured'], r['stations_expected'], datetime.fromisoformat(r['capture_saved_at']).astimezone(p.LOCAL).strftime('%b %d %I:%M %p'))]
+    if r.get('data_problems'):
+        notes.append('Left out after gut-checks: ' + '; '.join('%s (%s)' % (k, ', '.join(v)) for k, v in r['data_problems'].items()))
+    if r.get('missing'): notes.append('Not captured: ' + ', '.join(r['missing']))
+    return dict(title='NEWA weather stations: next 5 days', table=dict(head=['Area', 'Next 5 days (weather, chance of rain, rain)', 'Measured rain, last 7 days', 'Temperature range'], rows=rows), notes=notes)
+
+
 def to_markdown(rep):
     out = ['# Daily forecast report: %s' % datetime.fromisoformat(rep['date']).strftime('%A, %B %d, %Y'), '', '_Generated %s (Connecticut time)._' % rep['generated_local'], '']
     for s in rep['sections']:
@@ -255,7 +277,7 @@ def main():
     earlier = [v for k, v in state.items() if k < day]
     since = max(earlier) if earlier else (now - timedelta(hours=24)).isoformat()
     rep = dict(date=day, generated_at=now.isoformat(), generated_local=now.astimezone(p.LOCAL).strftime('%B %d, %Y %I:%M %p'), scored_since=since,
-               sections=[run_status(day), forecasts(day), scored(since), learning(since, day), reasoning(day)])
+               sections=[run_status(day), forecasts(day), newa_section(), scored(since), learning(since, day), reasoning(day)])
     save(OUT / (day + '.json'), rep); (OUT / (day + '.md')).write_text(to_markdown(rep), encoding='utf-8')
     save(OUT / 'latest.json', dict(date=day, json='outputs/daily-reports/%s.json' % day, markdown='outputs/daily-reports/%s.md' % day, generated_at=rep['generated_at']))
     state[day] = rep['generated_at']; save(state_path, state)
